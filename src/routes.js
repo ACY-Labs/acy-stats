@@ -1,15 +1,17 @@
-import { ethers } from 'ethers'
+//import { ethers } from 'ethers'
 import React from 'react';
 import { StaticRouter } from 'react-router-dom';
 import { renderToString } from 'react-dom/server';
-import fetch from 'cross-fetch';
+//import fetch from 'cross-fetch';
 import sizeof from 'object-sizeof'
 
 import App from './App';
-import { ApolloClient, InMemoryCache, gql, HttpLink } from '@apollo/client'
+//import { ApolloClient, InMemoryCache, gql, HttpLink } from '@apollo/client'
 import { getLogger } from './helpers'
 import { addresses, ARBITRUM, AVALANCHE } from './addresses'
-import { queryEarnData } from './dataProvider'
+//import { queryEarnData } from './dataProvider'
+import { getPriceFromChainlink } from './chainlinkFetcher';
+import { chainlink_tokens_name } from './chainlinkAddr';
 
 const IS_PRODUCTION = process.env.NODE_ENV === 'production'
 
@@ -29,38 +31,38 @@ const jsScriptTagsFromAssets = (assets, entrypoint, extra = '') => {
   ).join('') : '' : '';
 };
 
-const { formatUnits} = ethers.utils
+// const { formatUnits} = ethers.utils
 
 const logger = getLogger('routes')
 
-const apolloOptions = {
-  query: {
-    fetchPolicy: 'no-cache'
-  },
-  watchQuery: {
-    fetchPolicy: 'no-cache'
-  }
-}
-const arbitrumGraphClient = new ApolloClient({
-  link: new HttpLink({ uri: 'https://api.thegraph.com/subgraphs/name/gmx-io/gmx-stats', fetch }),
-  cache: new InMemoryCache(),
-  defaultOptions: apolloOptions
-})
+// const apolloOptions = {
+//   query: {
+//     fetchPolicy: 'no-cache'
+//   },
+//   watchQuery: {
+//     fetchPolicy: 'no-cache'
+//   }
+// }
+// const arbitrumGraphClient = new ApolloClient({
+//   link: new HttpLink({ uri: 'https://api.thegraph.com/subgraphs/name/gmx-io/gmx-stats', fetch }),
+//   cache: new InMemoryCache(),
+//   defaultOptions: apolloOptions
+// })
 
-const avalancheGraphClient = new ApolloClient({
-  link: new HttpLink({ uri: 'https://api.thegraph.com/subgraphs/name/gdev8317/gmx-avalanche-staging', fetch }),
-  cache: new InMemoryCache(),
-  defaultOptions: apolloOptions
-})
+// const avalancheGraphClient = new ApolloClient({
+//   link: new HttpLink({ uri: 'https://api.thegraph.com/subgraphs/name/gdev8317/gmx-avalanche-staging', fetch }),
+//   cache: new InMemoryCache(),
+//   defaultOptions: apolloOptions
+// })
 
 const cachedPrices = {
   sorted: {
     [ARBITRUM]: {},
-    [AVALANCHE]: {}
+//    [AVALANCHE]: {}
   },
   byKey: {
     [ARBITRUM]: {},
-    [AVALANCHE]: {}
+//    [AVALANCHE]: {}
   }
 }
 const AVALANCHE_LAUNCH_TS = 1641416400
@@ -200,9 +202,9 @@ async function precacheOldPrices(chainId, entitiesKey) {
 }
 if (!process.env.DISABLE_PRICES) {
   precacheOldPrices(ARBITRUM, "chainlinkPrices")
-  precacheOldPrices(ARBITRUM, "fastPrices")
-  precacheOldPrices(AVALANCHE, "chainlinkPrices")
-  precacheOldPrices(AVALANCHE, "fastPrices")
+  //precacheOldPrices(ARBITRUM, "fastPrices")
+  //precacheOldPrices(AVALANCHE, "chainlinkPrices")
+  //precacheOldPrices(AVALANCHE, "fastPrices")
 }
 
  // on Arbitrum new block may have with timestamps from past...
@@ -235,9 +237,9 @@ async function precacheNewPrices(chainId, entitiesKey) {
 }
 if (!process.env.DISABLE_PRICES) {
   precacheNewPrices(ARBITRUM, "chainlinkPrices")
-  precacheNewPrices(ARBITRUM, "fastPrices")
-  precacheNewPrices(AVALANCHE, "chainlinkPrices")
-  precacheNewPrices(AVALANCHE, "fastPrices")
+  //precacheNewPrices(ARBITRUM, "fastPrices")
+  //precacheNewPrices(AVALANCHE, "chainlinkPrices")
+  //precacheNewPrices(AVALANCHE, "fastPrices")
 }
 
 async function loadPrices({ before, after, chainId, entitiesKey } = {}) {
@@ -248,10 +250,12 @@ async function loadPrices({ before, after, chainId, entitiesKey } = {}) {
     throw new Error('loadPrices requires entitiesKey')
   }
   if (!before) {
-    before = parseInt(Date.now() / 1000) + 86400 * 365
+    //before = parseInt(Date.now() / 1000) + 86400 * 365
+    before = parseInt(Date.now() / 1000)
   }
   if (!after) {
-    after = 0
+    //after = 0
+    after = before - 86400;  // a day before
   }
   logger.info('loadPrices %s chainId: %s before: %s, after: %s',
     entitiesKey,
@@ -260,39 +264,46 @@ async function loadPrices({ before, after, chainId, entitiesKey } = {}) {
     after && toReadable(after)
   )
 
-  const fragment = (skip) => {
-     return `${entitiesKey}(
-      first: 1000
-      skip: ${skip}
-      orderBy: timestamp
-      orderDirection: desc
-      where: {
-        timestamp_lte: ${before}
-        timestamp_gte: ${after}
-        period: any
-      }
-    ) { value, timestamp, token }\n`
-  }
-  const queryString = `{
-    p0: ${fragment(0)}
-    p1: ${fragment(1000)}
-    p2: ${fragment(2000)}
-    p3: ${fragment(3000)}
-    p4: ${fragment(4000)}
-    p5: ${fragment(5000)}
-  }`
-  const query = gql(queryString)
+  // const fragment = (skip) => {
+  //    return `${entitiesKey}(
+  //     first: 1000
+  //     skip: ${skip}
+  //     orderBy: timestamp
+  //     orderDirection: desc
+  //     where: {
+  //       timestamp_lte: ${before}
+  //       timestamp_gte: ${after}
+  //       period: any
+  //     }
+  //   ) { value, timestamp, token }\n`
+  // }
+  // const queryString = `{
+  //   p0: ${fragment(0)}
+  //   p1: ${fragment(1000)}
+  //   p2: ${fragment(2000)}
+  //   p3: ${fragment(3000)}
+  //   p4: ${fragment(4000)}
+  //   p5: ${fragment(5000)}
+  // }`
+  // const query = gql(queryString)
 
-  const graphClient = chainId === AVALANCHE ? avalancheGraphClient : arbitrumGraphClient;
-  const { data } = await graphClient.query({query})
-  const prices = [
-    ...data.p0,
-    ...data.p1,
-    ...data.p2,
-    ...data.p3,
-    ...data.p4,
-    ...data.p5
-  ]
+  // const graphClient = chainId === AVALANCHE ? avalancheGraphClient : arbitrumGraphClient;
+  // const { data } = await graphClient.query({query})
+  // const prices = [
+  //   ...data.p0,
+  //   ...data.p1,
+  //   ...data.p2,
+  //   ...data.p3,
+  //   ...data.p4,
+  //   ...data.p5
+  // ]
+
+  let prices = [];
+  for (const token_name of chainlink_tokens_name) {
+    const token_price = await getPriceFromChainlink(before, after, token_name);
+    prices.push(...token_price);
+    await sleep(2000);
+  }
 
   if (prices.length) {
     logger.debug('Loaded %s prices (%s – %s) for chain %s %s',
@@ -344,14 +355,16 @@ function getPrices(from, to, preferableChainId = ARBITRUM, preferableSource = "c
     throw createHttpError(400, `Invalid preferableSource ${preferableSource}. Valid options are: chainlink, fast`)
   }
 
-  const validSymbols = new Set(['BTC', 'ETH', 'BNB', 'UNI', 'LINK', 'AVAX'])
+  //const validSymbols = new Set(['BTC', 'ETH', 'BNB', 'UNI', 'LINK', 'AVAX'])
+  const validSymbols = new Set(['BTC', 'ETH', 'BNB'])
   if (!validSymbols.has(symbol)) {
     throw createHttpError(400, `Invalid symbol ${symbol}`)
   }
   preferableChainId = Number(preferableChainId)
-  const validSources = new Set([ARBITRUM, AVALANCHE])
+  //const validSources = new Set([ARBITRUM, AVALANCHE])
+  const validSources = new Set([ARBITRUM])
   if (!validSources.has(preferableChainId)) {
-    throw createHttpError(400, `Invalid preferableChainId ${preferableChainId}. Valid options are ${ARBITRUM}, ${AVALANCHE}`)
+    throw createHttpError(400, `Invalid preferableChainId ${preferableChainId}. Valid options are ${ARBITRUM}`)
   }
 
   const tokenAddress = addresses[preferableChainId][symbol]?.toLowerCase()
@@ -378,17 +391,17 @@ function getPrices(from, to, preferableChainId = ARBITRUM, preferableSource = "c
 
   let [prices, firstTimestamp] = getPriceRange(sortedPrices, from, to)
 
-  if (preferableSource === "fast" && firstTimestamp > from) {
-    // there is no enough fast price data. upfill it with chainlink prices
-    const otherSortedPrices = (
-      cachedPrices.sorted[preferableChainId]
-      && cachedPrices.sorted[preferableChainId].chainlinkPrices
-      && cachedPrices.sorted[preferableChainId].chainlinkPrices[tokenAddress]
-    ) || []
-    const [chainlinkPrices] = getPriceRange(otherSortedPrices, from, firstTimestamp, true)
+  // if (preferableSource === "fast" && firstTimestamp > from) {
+  //   // there is no enough fast price data. upfill it with chainlink prices
+  //   const otherSortedPrices = (
+  //     cachedPrices.sorted[preferableChainId]
+  //     && cachedPrices.sorted[preferableChainId].chainlinkPrices
+  //     && cachedPrices.sorted[preferableChainId].chainlinkPrices[tokenAddress]
+  //   ) || []
+  //   const [chainlinkPrices] = getPriceRange(otherSortedPrices, from, firstTimestamp, true)
 
-    prices = [...chainlinkPrices, ...prices]
-  }
+  //   prices = [...chainlinkPrices, ...prices]
+  // }
 
   ttlCache.set(cacheKey, prices)
 
@@ -464,49 +477,49 @@ function createHttpError(code, message) {
 }
 
 export default function routes(app) {
-  app.get('/api/earn/:account', async (req, res, next) => {
-    const chainName = req.query.chain || 'arbitrum'
-    const validChainNames = new Set(['arbitrum', 'avalanche'])
-    if (!validChainNames.has(chainName)) {
-      next(createHttpError(400, `Valid chains are: ${Array.from(validChainNames)}`))
-      return
-    }
-    try {
-      const earnData = await queryEarnData(chainName, req.params.account)
-      res.send(earnData)
-    } catch (ex) {
-      logger.error(ex)
-      next(createHttpError(500, ex.message))
-      return
-    }
-  })
+  // app.get('/api/earn/:account', async (req, res, next) => {
+  //   const chainName = req.query.chain || 'arbitrum'
+  //   const validChainNames = new Set(['arbitrum', 'avalanche'])
+  //   if (!validChainNames.has(chainName)) {
+  //     next(createHttpError(400, `Valid chains are: ${Array.from(validChainNames)}`))
+  //     return
+  //   }
+  //   try {
+  //     const earnData = await queryEarnData(chainName, req.params.account)
+  //     res.send(earnData)
+  //   } catch (ex) {
+  //     logger.error(ex)
+  //     next(createHttpError(500, ex.message))
+  //     return
+  //   }
+  // })
 
-  app.get('/api/gmx-supply', async (req, res) => {
-    const apiResponse = await fetch('https://api.gmx.io/gmx_supply')
-    const data = (await apiResponse.text()).toString()
-    res.set('Content-Type', 'text/plain')
-    res.send(formatUnits(data))
-  })
+  // app.get('/api/gmx-supply', async (req, res) => {
+  //   const apiResponse = await fetch('https://api.gmx.io/gmx_supply')
+  //   const data = (await apiResponse.text()).toString()
+  //   res.set('Content-Type', 'text/plain')
+  //   res.send(formatUnits(data))
+  // })
 
-  app.get('/api/chart/:symbol', async (req, res, next) => {
-    const [from, to] = getFromAndTo(req)
+  // app.get('/api/chart/:symbol', async (req, res, next) => {
+  //   const [from, to] = getFromAndTo(req)
 
-    let prices
-    try {
-      prices = getPrices(from, to, req.query.preferableChainId, req.query.preferableSource, req.params.symbol)
-    } catch (ex) {
-      next(ex)
-      return
-    }
+  //   let prices
+  //   try {
+  //     prices = getPrices(from, to, req.query.preferableChainId, req.query.preferableSource, req.params.symbol)
+  //   } catch (ex) {
+  //     next(ex)
+  //     return
+  //   }
 
-    res.set('Cache-Control', 'max-age=60')
-    res.send(prices)
-  })
+  //   res.set('Cache-Control', 'max-age=60')
+  //   res.send(prices)
+  // })
 
   app.get('/api/candles/:symbol', async (req, res, next) => {
     const [from, to] = getFromAndTo(req)
     var fullUrl = req.protocol + '://' + req.get('host') + req.originalUrl;
-    logger.debug('getcCandles url:', fullUrl);
+    logger.debug('getCandles url:', fullUrl);
     let prices
     try {
       prices = getPrices(from, to, req.query.preferableChainId, req.query.preferableSource, req.params.symbol)
