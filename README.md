@@ -57,6 +57,23 @@ const periodsMap = {
 2. `src/chainlinkFetcher.js`：
    - 包含实际从 chainlink 获取价格的函数
 3. `src/chainlinkAddr.js`：
-   - 包含 chainlink 获取价格的合约地址、token 地址（BSC testnet上）
+   - 包含 chainlink 获取价格的合约地址、token 地址（BSC mainnet/testnet）
 4. `src/addresses.js`：
    - gmx-stat 遗留下来的 token 地址，与 `chainlinkAddr.js`的 token 地址相同
+
+
+
+## 其他
+
+1. 主网和测试网的切换：
+
+​	在 `.env` 里，将`ENABLE_MAINNET`设为 true 表示使用 BSC mainnet，设为 false 表示使用 BSC testnet。目前暂不支持 mainnet & testnet 同时使用，同一时间只能使用其中一种。
+
+2. `cachedPrices`的持久化保存与恢复：
+
+   - 目的：方便服务器崩溃后重启可以及时恢复数据，而不用担心之前获取的数据都不见了
+
+   - 在 `src/routes.js`中新增了 `saveCachedPrices2Json(), restoreCachedPricesFromJson()`
+   - `saveCachedPrices2Json()`：目前设定为每 20 分钟将 `cachedPrices` 持久化保存为 `json`，存于`/chainlink_cache/prices_mainnet.json`（testnet则是`prices_testnet.json`）
+   - `restoreCachedPricesFromJson()`：每次启动服务器后，就预先尝试根据当前为 mainnet/testnet 从上述 `json`文件自动加载数据到 `cachedPrices`
+
