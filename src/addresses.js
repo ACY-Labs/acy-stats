@@ -4,6 +4,22 @@ export const BSC = 56
 export const ARBITRUM = 42161
 export const AVALANCHE = 43114
 
+const token_addresses_testnet = {
+    BNB : ethers.constants.AddressZero,
+    // actually are WBTC, WETH
+    BTC : '0x6E59735D808E49D050D0CB21b0c9549D379BBB39',
+    ETH : '0xF471F7051D564dE03F3736EeA037D2dA2fa189c1'
+  
+}
+  
+const token_addresses_mainnet = {
+    BNB : ethers.constants.AddressZero,
+    // actually are WBTC, WETH
+    BTC : '0x7130d2A12B9BCbFAe4f2634d864A1Ee1Ce3Ead9c',
+    ETH : '0x2170Ed0880ac9A755fd29B2688956BD959F933F8'
+  
+}
+
 export const addresses = {
     // [BSC]: {
     //     Vault: "0xc73A8DcAc88498FD4b4B1b2AaA37b0a2614Ff67B",
@@ -16,13 +32,8 @@ export const addresses = {
     //     MetamaskRouter: "0x1a1ec25DC08e98e5E93F1104B5e5cdD298707d31"
     // },
 
-    // actually is BSC testnet
-    [ARBITRUM]: {
-        BNB : ethers.constants.AddressZero,
-        // actually are WBTC, WETH
-        BTC : '0x6E59735D808E49D050D0CB21b0c9549D379BBB39',
-        ETH : '0xF471F7051D564dE03F3736EeA037D2dA2fa189c1'
-    },
+    // actually is BSC
+    [ARBITRUM]: process.env.ENABLE_MAINNET === 'true' ? token_addresses_mainnet : token_addresses_testnet,
 
     // [AVALANCHE]: {
     //     GMX: '0xfc5a1a6eb076a2c7ad06ed22c90d7e710e35ad0a',

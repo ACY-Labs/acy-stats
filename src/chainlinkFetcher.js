@@ -1,6 +1,10 @@
 import { getAbi, getTokenAddr, getChainlinkAddr } from "./chainlinkAddr";
 import Web3 from "web3";
 
+const my_web3 = process.env.ENABLE_MAINNET === 'true' ? 
+  new Web3("https://bsc-dataseed.binance.org/") :
+  new Web3("https://data-seed-prebsc-1-s1.binance.org:8545/");
+
 const batch_size = 10;
 const step = BigInt(10);
 
@@ -116,10 +120,9 @@ async function fetchRoundDataRange(priceFeed, after_round_id, before_round_id, t
     return chainlink_prices;
 }
 
+
 export async function getPriceFromChainlink(before_timestamp, after_timestamp, token_name) {
   console.log(`Fetching for ${token_name}`);
-  const my_web3 = new Web3("https://data-seed-prebsc-1-s1.binance.org:8545/");
-  //const token_name = "ETH";
   const abi = getAbi(token_name);
   const chainlink_addr = getChainlinkAddr(token_name);
   const token_addr = getTokenAddr(token_name);
