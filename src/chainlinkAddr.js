@@ -69,11 +69,6 @@ export function getTokenAddr(token_name) {
 }
 
 export function getChainlinkAddr(token_name) {
-  if (ENABLE_MAINNET === 'true') {
-      console.log("In mainnet...");
-  } else {
-    console.log("In testnet...");
-  }
   if (!(token_name in chainlink_addresses)) {
     throw new Error(`Unknown token_name in getChainlinkAddr: ${token_name}`);
   }

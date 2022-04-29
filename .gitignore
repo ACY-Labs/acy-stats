@@ -16,3 +16,5 @@ build.*
 .env.production.local
 
 *.pem
+
+chainlink_cache/*

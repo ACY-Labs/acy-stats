@@ -1,12 +1,14 @@
 import { getAbi, getTokenAddr, getChainlinkAddr } from "./chainlinkAddr";
 import Web3 from "web3";
 
-const my_web3 = process.env.ENABLE_MAINNET === 'true' ? 
+const ENABLE_MAINNET = process.env.ENABLE_MAINNET === 'true'; 
+
+const my_web3 = ENABLE_MAINNET ? 
   new Web3("https://bsc-dataseed.binance.org/") :
   new Web3("https://data-seed-prebsc-1-s1.binance.org:8545/");
-
-const batch_size = 10;
-const step = BigInt(10);
+// prices count is much higher in mainnet than in testnet, hence require fetching more prices in a row
+const batch_size = ENABLE_MAINNET ? 50 : 10;
+const step       = ENABLE_MAINNET ? BigInt(50) : BigInt(10);
 
 // 估算 before_timestamp 大概的 round_id，避免每次从 latest_round_id 开始搜索
 async function estimateStartRoundId(priceFeed, before_timestamp, lastest_round_id) {

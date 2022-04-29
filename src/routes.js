@@ -17,6 +17,9 @@ const IS_PRODUCTION = process.env.NODE_ENV === 'production'
 
 const assets = require(process.env.RAZZLE_ASSETS_MANIFEST);
 
+const fs = require('fs');
+const path = require('path');
+
 const cssLinksFromAssets = (assets, entrypoint) => {
   return assets[entrypoint] ? assets[entrypoint].css ?
   assets[entrypoint].css.map(asset=>
@@ -55,7 +58,7 @@ const logger = getLogger('routes')
 //   defaultOptions: apolloOptions
 // })
 
-const cachedPrices = {
+let cachedPrices = {
   sorted: {
     [ARBITRUM]: {},
 //    [AVALANCHE]: {}
@@ -65,6 +68,40 @@ const cachedPrices = {
 //    [AVALANCHE]: {}
   }
 }
+
+// Saved cachedPrices to json regularly
+const file_name = process.env.ENABLE_MAINNET === 'true' ? "prices_mainnet.json" : "prices_testnet.json";
+const file_path = path.join('chainlink_cache', file_name);
+const SAVE_INTERVAL = 1000 * 60 * 1;
+
+function saveCachedPrices2Json() {
+  let data = JSON.stringify(cachedPrices, null, 2);
+  fs.writeFile(file_path, data, 'utf8', (err) => {
+    if (err) {
+      logger.error("Encounter error in saving cachePrices: ", err);
+    } else {
+      logger.info("Sucessfully saved cachedPrices");
+    }
+  })
+  setTimeout(saveCachedPrices2Json, SAVE_INTERVAL);
+}
+
+// Restore cachedPrices from json (if exsits) after server has started,
+// then proceeds to saving cachePrices regularly
+function restoreCachedPricesFromJson() {
+  if (fs.existsSync(file_path)) {
+    logger.info("Found:", file_name, ", trying to restore from it");
+    const raw_data = fs.readFileSync(file_path, 'utf8');  // read file synchronously
+    cachedPrices = JSON.parse(raw_data);
+    logger.info("Successfully restore from JSON");
+  }
+  
+  sleep(SAVE_INTERVAL);  // avoid calling save too early
+  saveCachedPrices2Json();
+}
+restoreCachedPricesFromJson();
+
+
 const AVALANCHE_LAUNCH_TS = 1641416400
 function putPricesIntoCache(prices, chainId, entitiesKey) {
   if (!prices || !chainId || !entitiesKey) {
