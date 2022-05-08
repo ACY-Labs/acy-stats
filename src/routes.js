@@ -72,7 +72,7 @@ let cachedPrices = {
 // Saved cachedPrices to json regularly
 const file_name = process.env.ENABLE_MAINNET === 'true' ? "prices_mainnet.json" : "prices_testnet.json";
 const file_path = path.join('chainlink_cache', file_name);
-const SAVE_INTERVAL = 1000 * 60 * 15;
+const SAVE_INTERVAL = 1000 * 60 * 15;  // 15 mins
 
 function saveCachedPrices2Json() {
   let data = JSON.stringify(cachedPrices, null, 2);
@@ -287,8 +287,8 @@ async function loadPrices({ before, after, chainId, entitiesKey } = {}) {
     throw new Error('loadPrices requires entitiesKey')
   }
   if (!before) {
-    //before = parseInt(Date.now() / 1000) + 86400 * 365
-    before = parseInt(Date.now() / 1000)
+    before = parseInt(Date.now() / 1000) + 86400 * 365
+    //before = parseInt(Date.now() / 1000)
   }
   if (!after) {
     //after = 0

@@ -91,7 +91,7 @@ async function findRoundIdRange(priceFeed, after_timestamp, before_timestamp, st
 
 async function fetchRoundDataRange(priceFeed, after_round_id, before_round_id, token_addr) {
     let chainlink_prices = [];
-    if (after_round_id === -1 || before_round_id === -1 || after_round_id > before_round_id) {
+    if (after_round_id === BigInt(-1) || before_round_id === BigInt(-1) || after_round_id > before_round_id) {
         return [];
     }
 
