@@ -1,11 +1,9 @@
-import { getAbi, getTokenAddr, getChainlinkAddr } from "./chainlinkAddr";
+import { getAbi, getTokenAddr, getChainlinkAddr, getRpcUrl } from "./chainlinkAddr";
 import Web3 from "web3";
 
 const ENABLE_MAINNET = process.env.ENABLE_MAINNET === 'true'; 
+const BSC_RPC_WEB3 = new Web3(getRpcUrl("BSC"));
 
-const my_web3 = ENABLE_MAINNET ? 
-  new Web3("https://bsc-dataseed.binance.org/") :
-  new Web3("https://data-seed-prebsc-1-s1.binance.org:8545/");
 // prices count is much higher in mainnet than in testnet, hence require fetching more prices in a row
 const batch_size = ENABLE_MAINNET ? 50 : 10;
 const step       = ENABLE_MAINNET ? BigInt(50) : BigInt(10);
@@ -60,7 +58,7 @@ async function findRoundIdRange(priceFeed, after_timestamp, before_timestamp, st
 
       //console.log("Waiting promises...");
       await Promise.all(price_promises).then((results) => {
-        let range = curr_round_id.toString() + ' ~ ' + itr_round_id.toString();
+        //let range = curr_round_id.toString() + ' ~ ' + itr_round_id.toString();
         //console.log(`Done ${batch_size}: ${range}`);
         results.forEach((x) => {
           let timestamp = parseInt(x);
@@ -123,11 +121,12 @@ async function fetchRoundDataRange(priceFeed, after_round_id, before_round_id, t
 }
 
 
-export async function getPriceFromChainlink(before_timestamp, after_timestamp, token_name) {
-  console.log(`Fetching for ${token_name}`);
-  const abi = getAbi(token_name);
-  const chainlink_addr = getChainlinkAddr(token_name);
-  const token_addr = getTokenAddr(token_name);
+export async function getPriceFromChainlink(network_name, before_timestamp, after_timestamp, token_name) {
+  console.log(`Fetching for ${network_name}: ${token_name}`);
+  const abi = getAbi(network_name, token_name);
+  const chainlink_addr = getChainlinkAddr(network_name, token_name);
+  const token_addr = getTokenAddr(network_name, token_name);
+  const my_web3 = network_name === "BSC" ? BSC_RPC_WEB3 : BSC_RPC_WEB3;
   const priceFeed = new my_web3.eth.Contract(abi, chainlink_addr);
 
   let lastest_round_id = BigInt(-1);

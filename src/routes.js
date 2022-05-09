@@ -8,10 +8,10 @@ import sizeof from 'object-sizeof'
 import App from './App';
 //import { ApolloClient, InMemoryCache, gql, HttpLink } from '@apollo/client'
 import { getLogger } from './helpers'
-import { addresses, ARBITRUM, AVALANCHE } from './addresses'
+//import { addresses, BSC } from './addresses'
 //import { queryEarnData } from './dataProvider'
 import { getPriceFromChainlink } from './chainlinkFetcher';
-import { chainlink_tokens_name } from './chainlinkAddr';
+import { chainlink_tokens_name, chainId2Name, BSC, getTokenAddr } from './chainlinkAddr';
 
 const IS_PRODUCTION = process.env.NODE_ENV === 'production'
 
@@ -60,11 +60,11 @@ const logger = getLogger('routes')
 
 let cachedPrices = {
   sorted: {
-    [ARBITRUM]: {},
+    [BSC]: {},
 //    [AVALANCHE]: {}
   },
   byKey: {
-    [ARBITRUM]: {},
+    [BSC]: {},
 //    [AVALANCHE]: {}
   }
 }
@@ -72,7 +72,7 @@ let cachedPrices = {
 // Saved cachedPrices to json regularly
 const file_name = process.env.ENABLE_MAINNET === 'true' ? "prices_mainnet.json" : "prices_testnet.json";
 const file_path = path.join('chainlink_cache', file_name);
-const SAVE_INTERVAL = 1000 * 60 * 15;  // 15 mins
+const SAVE_INTERVAL = 1000 * 60 * 1;  // 15 mins
 
 function saveCachedPrices2Json() {
   let data = JSON.stringify(cachedPrices, null, 2);
@@ -102,7 +102,7 @@ function restoreCachedPricesFromJson() {
 restoreCachedPricesFromJson();
 
 
-const AVALANCHE_LAUNCH_TS = 1641416400
+//const AVALANCHE_LAUNCH_TS = 1641416400
 function putPricesIntoCache(prices, chainId, entitiesKey) {
   if (!prices || !chainId || !entitiesKey) {
     throw new Error('Invalid arguments')
@@ -115,14 +115,14 @@ function putPricesIntoCache(prices, chainId, entitiesKey) {
   for (const price of prices) {
     const token = price.token.toLowerCase()
     const timestamp = price.timestamp
-    if (chainId === AVALANCHE && entitiesKey === "fastPrices" && timestamp < AVALANCHE_LAUNCH_TS) {
-      logger.info("Reject older prices on Avalanche. Price ts: %s launch ts: %s",
-        toReadable(timestamp),
-        toReadable(AVALANCHE_LAUNCH_TS)
-      )
-      ret = false
-      break
-    }
+    // if (chainId === AVALANCHE && entitiesKey === "fastPrices" && timestamp < AVALANCHE_LAUNCH_TS) {
+    //   logger.info("Reject older prices on Avalanche. Price ts: %s launch ts: %s",
+    //     toReadable(timestamp),
+    //     toReadable(AVALANCHE_LAUNCH_TS)
+    //   )
+    //   ret = false
+    //   break
+    // }
     byKeyNs[chainId][entitiesKey][token] = byKeyNs[chainId][entitiesKey][token] || {}
     byKeyNs[chainId][entitiesKey][token][timestamp] = Number(price.value) / precision
     changedTokens.add(token)
@@ -238,7 +238,7 @@ async function precacheOldPrices(chainId, entitiesKey) {
   }
 }
 if (!process.env.DISABLE_PRICES) {
-  precacheOldPrices(ARBITRUM, "chainlinkPrices")
+  precacheOldPrices(BSC, "chainlinkPrices")
   //precacheOldPrices(ARBITRUM, "fastPrices")
   //precacheOldPrices(AVALANCHE, "chainlinkPrices")
   //precacheOldPrices(AVALANCHE, "fastPrices")
@@ -273,7 +273,7 @@ async function precacheNewPrices(chainId, entitiesKey) {
   setTimeout(precacheNewPrices, 1000 * 60 * 1, chainId, entitiesKey)
 }
 if (!process.env.DISABLE_PRICES) {
-  precacheNewPrices(ARBITRUM, "chainlinkPrices")
+  precacheNewPrices(BSC, "chainlinkPrices")
   //precacheNewPrices(ARBITRUM, "fastPrices")
   //precacheNewPrices(AVALANCHE, "chainlinkPrices")
   //precacheNewPrices(AVALANCHE, "fastPrices")
@@ -336,8 +336,9 @@ async function loadPrices({ before, after, chainId, entitiesKey } = {}) {
   // ]
 
   let prices = [];
-  for (const token_name of chainlink_tokens_name) {
-    const token_price = await getPriceFromChainlink(before, after, token_name);
+  const network_name = chainId2Name(chainId);
+  for (const token_name of chainlink_tokens_name[network_name]) {
+    const token_price = await getPriceFromChainlink(network_name, before, after, token_name);
     prices.push(...token_price);
     await sleep(2000);
   }
@@ -356,6 +357,7 @@ async function loadPrices({ before, after, chainId, entitiesKey } = {}) {
 }
 
 function toReadable(ts) {
+  // in UTC+0
   return (new Date(ts * 1000).toISOString()).replace('T', ' ').replace('.000Z', '')
 }
 
@@ -385,7 +387,7 @@ function binSearchPrice(prices, timestamp, gt = true) {
   return ret
 }
 
-function getPrices(from, to, preferableChainId = ARBITRUM, preferableSource = "chainlink", symbol) {
+function getPrices(from, to, preferableChainId = BSC, preferableSource = "chainlink", symbol) {
   const start = Date.now()
 
   if (preferableSource !== "chainlink" && preferableSource !== "fast") {
@@ -393,21 +395,23 @@ function getPrices(from, to, preferableChainId = ARBITRUM, preferableSource = "c
   }
 
   //const validSymbols = new Set(['BTC', 'ETH', 'BNB', 'UNI', 'LINK', 'AVAX'])
-  const validSymbols = new Set(['BTC', 'ETH', 'BNB'])
+  preferableChainId = Number(preferableChainId)
+  const validSymbols = new Set(chainlink_tokens_name[chainId2Name(preferableChainId)])
   if (!validSymbols.has(symbol)) {
     throw createHttpError(400, `Invalid symbol ${symbol}`)
   }
-  preferableChainId = Number(preferableChainId)
   //const validSources = new Set([ARBITRUM, AVALANCHE])
-  const validSources = new Set([ARBITRUM])
+  const validSources = new Set([BSC])
   if (!validSources.has(preferableChainId)) {
-    throw createHttpError(400, `Invalid preferableChainId ${preferableChainId}. Valid options are ${ARBITRUM}`)
+    throw createHttpError(400, `Invalid preferableChainId ${preferableChainId}. Valid options are ${BSC}`)
   }
 
-  const tokenAddress = addresses[preferableChainId][symbol]?.toLowerCase()
+  //const tokenAddress = addresses[preferableChainId][symbol]?.toLowerCase()
+  const tokenAddress = getTokenAddr(chainId2Name(preferableChainId), symbol).toLowerCase();
   if (!tokenAddress || !cachedPrices.byKey[preferableChainId].chainlinkPrices
     || !cachedPrices.byKey[preferableChainId].chainlinkPrices[tokenAddress]
   ) {
+    console.log(`Invalid1 tokenAddress ${tokenAddress} in getPrices()`);
     return []
   }
 

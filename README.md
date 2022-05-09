@@ -25,11 +25,11 @@
 
 ## 使用方式
 
-例子：`http://localhost:3113/api/candles/ETH?preferableChainId=42161&period=1h&from=1650234954&to=1650378658&preferableSource=chainlink`
+例子：`http://localhost:3113/api/candles/ETH?preferableChainId=56&period=1h&from=1650234954&to=1650378658&preferableSource=chainlink`
 
 1. `http://localhost:3113/api/candles`：表示 api 地址
 2. `ETH`: token symbol，目前合法的有 `BNB, BTC, ETH`
-3. (固定不变)`preferableChainId=42161`: 为了避免大幅度更改 gmx-stat，沿用了它原本的参数，每次都需要带上这个固定的参数。内部实际还是按照 BSC TESTNET 获取价格。
+3. `preferableChainId=56`: 目前只支持 BSC mainnet/testnet，均以 `56` 表示（为了可能会增加其他链） 
 4. `period=1h`：有如下 6 种时间粒度，从`src/routes.js`可以看到：
 
 ```javascript
@@ -58,8 +58,6 @@ const periodsMap = {
    - 包含实际从 chainlink 获取价格的函数
 3. `src/chainlinkAddr.js`：
    - 包含 chainlink 获取价格的合约地址、token 地址（BSC mainnet/testnet）
-4. `src/addresses.js`：
-   - gmx-stat 遗留下来的 token 地址，与 `chainlinkAddr.js`的 token 地址相同
 
 
 
