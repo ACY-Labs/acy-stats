@@ -27,7 +27,7 @@
 
 1. `http://localhost:3113/api/candles`：表示 api 地址
 2. `ETH`: token symbol，目前合法的有 `BNB, BTC, ETH`
-3. `preferableChainId=56`: 目前只支持 BSC mainnet/testnet，均以 `56` 表示（为了可能会增加其他链） 
+3. `preferableChainId=56`: 目前只支持 BSC mainnet，以 `56` 表示（未来可能会增加其他链） 
 4. `period=1h`：有如下 6 种时间粒度，从`src/routes.js`可以看到：
 
 ```javascript
@@ -52,8 +52,19 @@ const periodsMap = {
 1. `src/routes.js`：
    - 涉及 api 的处理
    - 从 subgraph 获取价格，并保存在数据库中
+   
 2. `src/chainlinkAddr.js`：包含 token 地址
 
 3. 数据库相关：
    1. `database.js`：定义了 sqlite 的连接方式及数据库保存的地方
    2. `PricesModel.js`：定义了有关价格的 table
+   
+   
+
+## 关于部署
+
+1. `database.js`：可以修改 storage（比如 `deploy.sqlite`）和密码（尽管数据没有保密的需要）
+2. `chainlink_cache/`：不再需要该文件夹
+
+
+
