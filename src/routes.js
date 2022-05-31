@@ -2,23 +2,24 @@
 import React from 'react';
 import { StaticRouter } from 'react-router-dom';
 import { renderToString } from 'react-dom/server';
-//import fetch from 'cross-fetch';
+import fetch from 'cross-fetch';
 import sizeof from 'object-sizeof'
 
 import App from './App';
-//import { ApolloClient, InMemoryCache, gql, HttpLink } from '@apollo/client'
+import { ApolloClient, InMemoryCache, gql, HttpLink } from '@apollo/client'
 import { getLogger } from './helpers'
-//import { addresses, BSC } from './addresses'
-//import { queryEarnData } from './dataProvider'
-import { getPriceFromChainlink } from './chainlinkFetcher';
+
 import { chainlink_tokens_name, chainId2Name, BSC, getTokenAddr } from './chainlinkAddr';
+import { Op } from 'sequelize';
+import { sequelize } from './database.js';
+import { ChainlinkPriceModel } from './PricesModel';
 
 const IS_PRODUCTION = process.env.NODE_ENV === 'production'
 
 const assets = require(process.env.RAZZLE_ASSETS_MANIFEST);
 
-const fs = require('fs');
-const path = require('path');
+sequelize.sync().then(() => console.log("[INFO] Database is ready"));
+
 
 const cssLinksFromAssets = (assets, entrypoint) => {
   return assets[entrypoint] ? assets[entrypoint].css ?
@@ -38,19 +39,20 @@ const jsScriptTagsFromAssets = (assets, entrypoint, extra = '') => {
 
 const logger = getLogger('routes')
 
-// const apolloOptions = {
-//   query: {
-//     fetchPolicy: 'no-cache'
-//   },
-//   watchQuery: {
-//     fetchPolicy: 'no-cache'
-//   }
-// }
-// const arbitrumGraphClient = new ApolloClient({
-//   link: new HttpLink({ uri: 'https://api.thegraph.com/subgraphs/name/gmx-io/gmx-stats', fetch }),
-//   cache: new InMemoryCache(),
-//   defaultOptions: apolloOptions
-// })
+const apolloOptions = {
+  query: {
+    fetchPolicy: 'no-cache'
+  },
+  watchQuery: {
+    fetchPolicy: 'no-cache'
+  }
+}
+// polygon testnet (matic)
+const polygonGraphClient = new ApolloClient({
+  link: new HttpLink({ uri: 'https://api.thegraph.com/subgraphs/name/lay90/acy-stats', fetch }),
+  cache: new InMemoryCache(),
+  defaultOptions: apolloOptions
+})
 
 // const avalancheGraphClient = new ApolloClient({
 //   link: new HttpLink({ uri: 'https://api.thegraph.com/subgraphs/name/gdev8317/gmx-avalanche-staging', fetch }),
@@ -58,97 +60,24 @@ const logger = getLogger('routes')
 //   defaultOptions: apolloOptions
 // })
 
-let cachedPrices = {
-  sorted: {
-    [BSC]: {},
-//    [AVALANCHE]: {}
-  },
-  byKey: {
-    [BSC]: {},
-//    [AVALANCHE]: {}
-  }
-}
-
-// Saved cachedPrices to json regularly
-const file_name = process.env.ENABLE_MAINNET === 'true' ? "prices_mainnet.json" : "prices_testnet.json";
-const file_path = path.join('chainlink_cache', file_name);
-const SAVE_INTERVAL = 1000 * 60 * 1;  // 15 mins
-
-function saveCachedPrices2Json() {
-  let data = JSON.stringify(cachedPrices, null, 2);
-  fs.writeFile(file_path, data, 'utf8', (err) => {
-    if (err) {
-      logger.error("Encounter error in saving cachePrices: ", err);
-    } else {
-      logger.info("Sucessfully saved cachedPrices");
-    }
-  })
-  setTimeout(saveCachedPrices2Json, SAVE_INTERVAL);
-}
-
-// Restore cachedPrices from json (if exsits) after server has started,
-// then proceeds to saving cachePrices regularly
-function restoreCachedPricesFromJson() {
-  if (fs.existsSync(file_path)) {
-    logger.info("Found:", file_name, ", trying to restore from it");
-    const raw_data = fs.readFileSync(file_path, 'utf8');  // read file synchronously
-    cachedPrices = JSON.parse(raw_data);
-    logger.info("Successfully restore from JSON");
-  }
-  
-  sleep(SAVE_INTERVAL);  // avoid calling save too early
-  saveCachedPrices2Json();
-}
-restoreCachedPricesFromJson();
-
-
-//const AVALANCHE_LAUNCH_TS = 1641416400
-function putPricesIntoCache(prices, chainId, entitiesKey) {
-  if (!prices || !chainId || !entitiesKey) {
-    throw new Error('Invalid arguments')
-  }
-  let ret = true
-  const precision = entitiesKey === "chainlinkPrices" ? 1e8 : 1e30
-  const changedTokens = new Set([])
-  const byKeyNs = cachedPrices.byKey
-  byKeyNs[chainId][entitiesKey] = byKeyNs[chainId][entitiesKey] || {}
-  for (const price of prices) {
-    const token = price.token.toLowerCase()
-    const timestamp = price.timestamp
-    // if (chainId === AVALANCHE && entitiesKey === "fastPrices" && timestamp < AVALANCHE_LAUNCH_TS) {
-    //   logger.info("Reject older prices on Avalanche. Price ts: %s launch ts: %s",
-    //     toReadable(timestamp),
-    //     toReadable(AVALANCHE_LAUNCH_TS)
-    //   )
-    //   ret = false
-    //   break
-    // }
-    byKeyNs[chainId][entitiesKey][token] = byKeyNs[chainId][entitiesKey][token] || {}
-    byKeyNs[chainId][entitiesKey][token][timestamp] = Number(price.value) / precision
-    changedTokens.add(token)
+async function putPricesIntoCache(raw_prices, chainId, entitiesKey) {
+  if (!raw_prices || !chainId || !entitiesKey) {
+    throw new Error('Invalid arguments');
   }
 
-  const sortedNs = cachedPrices.sorted
-  sortedNs[chainId][entitiesKey] = sortedNs[chainId][entitiesKey] || {}
-  for (const token of changedTokens) {
-    sortedNs[chainId][entitiesKey][token] = Object.entries(byKeyNs[chainId][entitiesKey][token])
-      .map(([timestamp, price]) => [Number(timestamp), price])
-      .sort((a, b) => a[0] - b[0])
-  }
+  let ret = true;
+  const precision = 1e8;
+  let prices = raw_prices.map(price => ({
+    "chainId": chainId,
+    "token": price.token.toLowerCase(),
+    "timestamp": price.timestamp,
+    "value": Number(price.value) / precision
+  }));
+  await ChainlinkPriceModel.bulkCreate(prices, { ignoreDuplicates: true });
 
   if (!IS_PRODUCTION) {
-    console.time('sizeof call')
-    const size = sizeof(cachedPrices) / 1024 / 1024
-    console.timeEnd('sizeof call')
-    let pricesCount = 0
-    for (const chainId of Object.keys(cachedPrices.sorted)) {
-      for (const entitiesKey of Object.keys(cachedPrices.sorted[chainId])) {
-        for (const prices of Object.values(cachedPrices.sorted[chainId][entitiesKey])) {
-          pricesCount += prices.length
-        }
-      }
-    }
-    logger.debug('Estimated price cache size: %s MB, prices count: %s', size, pricesCount)
+    const size = sizeof(prices) / 1024 / 1024;
+    logger.debug('Estimated price cache size: %s MB, prices count: %s', size, prices.length);
   }
 
   return ret
@@ -214,8 +143,8 @@ async function precacheOldPrices(chainId, entitiesKey) {
         logger.info('All old prices loaded for chain: %s %s', chainId, entitiesKey)
         break
       }
-
-      if (!putPricesIntoCache(prices, chainId, entitiesKey)) {
+      const success = await putPricesIntoCache(prices, chainId, entitiesKey);
+      if (!success) {
         logger.info('putPricesIntoCache returned false for chain: %s %s. stop', chainId, entitiesKey)
         break
       }
@@ -259,7 +188,8 @@ async function precacheNewPrices(chainId, entitiesKey) {
         chainId,
         entitiesKey
       )
-      if (putPricesIntoCache(prices, chainId, entitiesKey)) {
+      const success = await putPricesIntoCache(prices, chainId, entitiesKey);
+      if (success) {
         newestPriceTimestamp = prices[0].timestamp
       } else {
         logger.warn('Prices were not saved')
@@ -301,47 +231,40 @@ async function loadPrices({ before, after, chainId, entitiesKey } = {}) {
     after && toReadable(after)
   )
 
-  // const fragment = (skip) => {
-  //    return `${entitiesKey}(
-  //     first: 1000
-  //     skip: ${skip}
-  //     orderBy: timestamp
-  //     orderDirection: desc
-  //     where: {
-  //       timestamp_lte: ${before}
-  //       timestamp_gte: ${after}
-  //       period: any
-  //     }
-  //   ) { value, timestamp, token }\n`
-  // }
-  // const queryString = `{
-  //   p0: ${fragment(0)}
-  //   p1: ${fragment(1000)}
-  //   p2: ${fragment(2000)}
-  //   p3: ${fragment(3000)}
-  //   p4: ${fragment(4000)}
-  //   p5: ${fragment(5000)}
-  // }`
-  // const query = gql(queryString)
-
-  // const graphClient = chainId === AVALANCHE ? avalancheGraphClient : arbitrumGraphClient;
-  // const { data } = await graphClient.query({query})
-  // const prices = [
-  //   ...data.p0,
-  //   ...data.p1,
-  //   ...data.p2,
-  //   ...data.p3,
-  //   ...data.p4,
-  //   ...data.p5
-  // ]
-
-  let prices = [];
-  const network_name = chainId2Name(chainId);
-  for (const token_name of chainlink_tokens_name[network_name]) {
-    const token_price = await getPriceFromChainlink(network_name, before, after, token_name);
-    prices.push(...token_price);
-    await sleep(2000);
+  const fragment = (skip) => {
+     return `${entitiesKey}(
+      first: 1000
+      skip: ${skip}
+      orderBy: timestamp
+      orderDirection: desc
+      where: {
+        timestamp_lte: ${before}
+        timestamp_gte: ${after}
+        period: any
+      }
+    ) { value, timestamp, token }\n`
   }
+  const queryString = `{
+    p0: ${fragment(0)}
+    p1: ${fragment(1000)}
+    p2: ${fragment(2000)}
+    p3: ${fragment(3000)}
+    p4: ${fragment(4000)}
+    p5: ${fragment(5000)}
+  }`
+  const query = gql(queryString)
+
+  // TODO: change to correct chainId
+  const graphClient = chainId === BSC ? polygonGraphClient : polygonGraphClient;
+  const { data } = await graphClient.query({query})
+  const prices = [
+    ...data.p0,
+    ...data.p1,
+    ...data.p2,
+    ...data.p3,
+    ...data.p4,
+    ...data.p5
+  ]
 
   if (prices.length) {
     logger.debug('Loaded %s prices (%s – %s) for chain %s %s',
@@ -361,37 +284,11 @@ function toReadable(ts) {
   return (new Date(ts * 1000).toISOString()).replace('T', ' ').replace('.000Z', '')
 }
 
-function getPriceRange(sortedPrices, from, to, inbound = false) {
-  const indexFrom = binSearchPrice(sortedPrices, from, inbound)
-  const indexTo = binSearchPrice(sortedPrices, to, !inbound) + 1
-
-  return [
-    sortedPrices.slice(indexFrom, indexTo),
-    sortedPrices[0][0]
-  ]
-}
-
-function binSearchPrice(prices, timestamp, gt = true) {
-  let left = 0
-  let right = prices.length - 1
-  let mid
-  while (left + 1 < right) {
-    mid = Math.floor((left + right) / 2)
-    if (prices[mid][0] < timestamp) {
-      left = mid
-    } else {
-      right = mid
-    }
-  }
-  const ret = gt ? right : left
-  return ret
-}
-
-function getPrices(from, to, preferableChainId = BSC, preferableSource = "chainlink", symbol) {
+async function getPrices(from, to, preferableChainId = BSC, preferableSource = "chainlink", symbol) {
   const start = Date.now()
 
-  if (preferableSource !== "chainlink" && preferableSource !== "fast") {
-    throw createHttpError(400, `Invalid preferableSource ${preferableSource}. Valid options are: chainlink, fast`)
+  if (preferableSource !== "chainlink") {
+    throw createHttpError(400, `Invalid preferableSource ${preferableSource}. Valid options are: chainlink`)
   }
 
   //const validSymbols = new Set(['BTC', 'ETH', 'BNB', 'UNI', 'LINK', 'AVAX'])
@@ -408,10 +305,12 @@ function getPrices(from, to, preferableChainId = BSC, preferableSource = "chainl
 
   //const tokenAddress = addresses[preferableChainId][symbol]?.toLowerCase()
   const tokenAddress = getTokenAddr(chainId2Name(preferableChainId), symbol).toLowerCase();
-  if (!tokenAddress || !cachedPrices.byKey[preferableChainId].chainlinkPrices
-    || !cachedPrices.byKey[preferableChainId].chainlinkPrices[tokenAddress]
-  ) {
-    console.log(`Invalid1 tokenAddress ${tokenAddress} in getPrices()`);
+  let validTokenAddress = await ChainlinkPriceModel.findOne({
+    attributes: ["token"], 
+    where: { token: tokenAddress }
+  });
+  if (validTokenAddress == null) {
+    console.log(`Invalid tokenAddress ${tokenAddress} in getPrices()`);
     return []
   }
 
@@ -422,27 +321,14 @@ function getPrices(from, to, preferableChainId = BSC, preferableSource = "chainl
     return fromCache
   }
 
-  const entitiesKey = preferableSource === "chainlink" ? "chainlinkPrices" : "fastPrices"
-
-  const sortedPrices = (
-    cachedPrices.sorted[preferableChainId]
-    && cachedPrices.sorted[preferableChainId][entitiesKey]
-    && cachedPrices.sorted[preferableChainId][entitiesKey][tokenAddress]
-  ) || []
-
-  let [prices, firstTimestamp] = getPriceRange(sortedPrices, from, to)
-
-  // if (preferableSource === "fast" && firstTimestamp > from) {
-  //   // there is no enough fast price data. upfill it with chainlink prices
-  //   const otherSortedPrices = (
-  //     cachedPrices.sorted[preferableChainId]
-  //     && cachedPrices.sorted[preferableChainId].chainlinkPrices
-  //     && cachedPrices.sorted[preferableChainId].chainlinkPrices[tokenAddress]
-  //   ) || []
-  //   const [chainlinkPrices] = getPriceRange(otherSortedPrices, from, firstTimestamp, true)
-
-  //   prices = [...chainlinkPrices, ...prices]
-  // }
+  const prices = await ChainlinkPriceModel.findAll({ 
+    attributes: ["timestamp", "value"],
+    where: {
+        chainId: preferableChainId,
+        token: tokenAddress,
+        timestamp: { [Op.between] : [from, to] }
+    }
+  });
 
   ttlCache.set(cacheKey, prices)
 
@@ -469,15 +355,17 @@ function getCandles(prices, period) {
 
   const candles = []
   const first = prices[0]
-  let prevTsGroup = Math.floor(first[0] / periodTime) * periodTime
-  let prevPrice = first[1]
-  let prevTs = first[0]
+  let prevTsGroup = Math.floor(first.timestamp / periodTime) * periodTime
+  let prevPrice = first.value
+  let prevTs = first.timestamp
   let o = prevPrice
   let h = prevPrice
   let l = prevPrice
   let c = prevPrice
   for (let i = 1; i < prices.length; i++) {
-    const [ts, price] = prices[i]
+    const ts = prices[i].timestamp;
+    const price = prices[i].value;
+    //const [ts, price] = prices[i]
     const tsGroup = ts - (ts % periodTime)
 
     if (prevTs > ts) {
@@ -559,11 +447,11 @@ export default function routes(app) {
 
   app.get('/api/candles/:symbol', async (req, res, next) => {
     const [from, to] = getFromAndTo(req)
-    var fullUrl = req.protocol + '://' + req.get('host') + req.originalUrl;
-    logger.debug('getCandles url:', fullUrl);
+    //var fullUrl = req.protocol + '://' + req.get('host') + req.originalUrl;
+    //logger.debug('getCandles url:', fullUrl);
     let prices
     try {
-      prices = getPrices(from, to, req.query.preferableChainId, req.query.preferableSource, req.params.symbol)
+      prices = await getPrices(from, to, req.query.preferableChainId, req.query.preferableSource, req.params.symbol)
     } catch (ex) {
       next(ex)
       return
@@ -578,7 +466,7 @@ export default function routes(app) {
     const candles = getCandles(prices, period)
     let updatedAt
     if (prices.length) {
-      updatedAt = prices[prices.length - 1][0]
+      updatedAt = prices[prices.length - 1].timestamp
     }
 
     res.set('Cache-Control', 'max-age=60')
