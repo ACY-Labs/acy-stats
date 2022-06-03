@@ -49,7 +49,8 @@ const apolloOptions = {
 }
 // polygon testnet (matic)
 const polygonGraphClient = new ApolloClient({
-  link: new HttpLink({ uri: 'https://api.thegraph.com/subgraphs/name/lay90/acy-stats', fetch }),
+  //link: new HttpLink({ uri: 'https://api.thegraph.com/subgraphs/name/lay90/acy-stats', fetch }),
+  link: new HttpLink({ uri: 'https://api.thegraph.com/subgraphs/name/lay90/acy-stats-bsc', fetch }),
   cache: new InMemoryCache(),
   defaultOptions: apolloOptions
 })

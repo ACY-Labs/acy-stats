@@ -9,10 +9,9 @@ const config = {
   "BSC": {
     // the addr are belong to polygon actually
     "token_addresses": {
-      //"BNB" : ethers.constants.AddressZero,
-      // actually are WBTC, WETH
-      "BTC" : "0x05d6f705C80d9F812d9bc1A142A655CDb25e2571",
-      "ETH" : "0xeBC8428DC717D440d5deCE1547456B115b868F0e"
+      "BNB" : "0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c",
+      "BTC" : "0x7130d2A12B9BCbFAe4f2634d864A1Ee1Ce3Ead9c",
+      "ETH" : "0x2170Ed0880ac9A755fd29B2688956BD959F933F8"
     }
   }
 }
