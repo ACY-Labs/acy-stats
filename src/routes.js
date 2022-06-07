@@ -9,10 +9,14 @@ import App from './App';
 import { ApolloClient, InMemoryCache, gql, HttpLink } from '@apollo/client'
 import { getLogger } from './helpers'
 
-import { chainlink_tokens_name, chainId2Name, BSC, getTokenAddr } from './chainlinkAddr';
+import { chainlink_tokens_name, chainId2Name, BSC, getTokenAddr, getAbi, getChainlinkAddr, getRpcUrl } from './chainlinkAddr';
 import { Op } from 'sequelize';
 import { sequelize } from './database.js';
 import { ChainlinkPriceModel } from './PricesModel';
+import Web3 from "web3";
+
+const BSC_RPC_WEB3 = new Web3(getRpcUrl("BSC"));
+const BSC_CHAINLINK_ABI = getAbi("BSC", "BNB");  // abis are same for all tokens
 
 const IS_PRODUCTION = process.env.NODE_ENV === 'production'
 
@@ -127,6 +131,58 @@ function sleep(ms) {
   return new Promise(resolve => {
     setTimeout(resolve, ms)
   })
+}
+
+async function fetchLatestPrice(chainId) {
+  const network_name = chainId2Name(chainId);
+  const my_web3 = network_name === "BSC" ? BSC_RPC_WEB3 : BSC_RPC_WEB3;
+  const abi = network_name === "BSC" ? BSC_CHAINLINK_ABI : BSC_CHAINLINK_ABI;
+
+  let prices = [];
+  for (const token_name of chainlink_tokens_name[network_name]) {
+    const chainlink_addr = getChainlinkAddr(network_name, token_name);
+    const token_addr = getTokenAddr(network_name, token_name);
+    const priceFeed = new my_web3.eth.Contract(abi, chainlink_addr);
+    const roundData = await priceFeed.methods.latestRoundData().call();
+    prices.push({
+      value: roundData.answer,
+      timestamp: roundData.updatedAt,
+      token: token_addr
+    });
+  }
+  //console.log("Latest data: ", ...prices);
+  return prices;
+}
+
+async function precacheNewPricesFromChainlink(chainId, entitiesKey) {
+  logger.info('[Chainlink] Precache new prices into memory chainId: %s %s...', chainId, entitiesKey)
+
+  try {
+    const prices = await fetchLatestPrice(chainId);
+    if (prices.length > 0) {
+      logger.info('[Chainlink] Loaded %s prices chainId: %s %s',
+        prices.length,
+        chainId,
+        entitiesKey
+      )
+      const success = await putPricesIntoCache(prices, chainId, entitiesKey);
+      if (!success) {
+        logger.warn('[Chainlink] Prices were not saved')
+      }
+    }
+  } catch (ex) {
+    logger.warn('[Chainlink] New prices load failed chainId: %s %s', chainId, entitiesKey)
+    logger.error(ex)
+  }
+
+  // every 30sec
+  setTimeout(precacheNewPricesFromChainlink, 1000 * 30 * 1, chainId, entitiesKey)
+}
+if (!process.env.DISABLE_PRICES) {
+  precacheNewPricesFromChainlink(BSC, "chainlinkPrices")
+  //precacheOldPrices(ARBITRUM, "fastPrices")
+  //precacheOldPrices(AVALANCHE, "chainlinkPrices")
+  //precacheOldPrices(AVALANCHE, "fastPrices")
 }
 
 async function precacheOldPrices(chainId, entitiesKey) {
