@@ -384,7 +384,10 @@ async function getPrices(from, to, preferableChainId = BSC, preferableSource = "
         chainId: preferableChainId,
         token: tokenAddress,
         timestamp: { [Op.between] : [from, to] }
-    }
+    },
+    order: [
+      ['timestamp', 'ASC']
+    ]
   });
 
   ttlCache.set(cacheKey, prices)
@@ -414,7 +417,7 @@ function getCandles(prices, period) {
   const candles = []
   const first = prices[0]
   let prevTsGroup = Math.floor(first.timestamp / periodTime) * periodTime
-  let prevPrice = first.value
+  let prevPrice = Number(first.value)
   let prevTs = first.timestamp
   let o = prevPrice
   let h = prevPrice
@@ -423,7 +426,7 @@ function getCandles(prices, period) {
   let countPerInterval = 1;  // number of prices in current interval
   for (let i = 1; i < prices.length; i++) {
     const ts = prices[i].timestamp;
-    const price = prices[i].value;
+    const price = Number(prices[i].value);
     //const [ts, price] = prices[i]
     const tsGroup = ts - (ts % periodTime)
 
@@ -449,6 +452,14 @@ function getCandles(prices, period) {
     prevTsGroup = tsGroup
     prevTs = ts
     countPerInterval += 1;
+  }
+  // last interval might not be a completed interval, so need to handle separately
+  if (countPerInterval == 1) {
+    //console.log(`final push1, prevTsGroup:${prevTsGroup} h:${h}, l:${l}, o:${o}, c:${c}`);
+    candles.push({ t: prevTsGroup, o, h: h * 1.0003, l: l * 0.9996, c });
+  } else {
+    //console.log(`final push1, prevTsGroup:${prevTsGroup} h:${h}, l:${l}, o:${o}, c:${c}`);
+    candles.push({ t: prevTsGroup, o, h, l, c });
   }
 
   return candles
