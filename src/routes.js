@@ -339,6 +339,7 @@ async function getPrices(from, to, preferableChainId = BSC, preferableSource = "
 }
 
 const periodsMap = {
+  '1m': 60 * 1,
   '5m': 60 * 5,
   '15m': 60 * 15,
   '1h': 60 * 60,
@@ -363,6 +364,7 @@ function getCandles(prices, period) {
   let h = prevPrice
   let l = prevPrice
   let c = prevPrice
+  let countPerInterval = 1;  // number of prices in current interval
   for (let i = 1; i < prices.length; i++) {
     const ts = prices[i].timestamp;
     const price = prices[i].value;
@@ -375,7 +377,12 @@ function getCandles(prices, period) {
     }
 
     if (prevTsGroup !== tsGroup) {
-      candles.push({ t: prevTsGroup, o, h, l, c })
+      if (countPerInterval == 1) {
+        candles.push({ t: prevTsGroup, o, h: h * 1.0003, l: l * 0.9996, c });
+      } else {
+        candles.push({ t: prevTsGroup, o, h, l, c });
+      }
+      countPerInterval = 0;
       o = c
       h = o > c ? o : c
       l = o < c ? o : c
@@ -385,6 +392,7 @@ function getCandles(prices, period) {
     l = l < price ? l : price
     prevTsGroup = tsGroup
     prevTs = ts
+    countPerInterval += 1;
   }
 
   return candles
