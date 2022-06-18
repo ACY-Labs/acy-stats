@@ -2,7 +2,7 @@
 export const BSC = 56;
 
 export const chainlink_tokens_name = {
-  "BSC": ["BNB", "BTC", "ETH"],
+  "BSC": ["ALP"],
 }
 
 const config = {
@@ -22,9 +22,10 @@ const config = {
     "rpc": "https://bsc-dataseed.binance.org/",
 
     "token_addresses": {
-      "BNB" : "0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c",
-      "BTC" : "0x7130d2A12B9BCbFAe4f2634d864A1Ee1Ce3Ead9c",
-      "ETH" : "0x2170Ed0880ac9A755fd29B2688956BD959F933F8"
+      // "BNB" : "0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c",
+      // "BTC" : "0x7130d2A12B9BCbFAe4f2634d864A1Ee1Ce3Ead9c",
+      // "ETH" : "0x2170Ed0880ac9A755fd29B2688956BD959F933F8",
+      "ALP" : "0x53a2eD45d06518f903782134aB28C0E99E3C3A13"
     }
   }
 }

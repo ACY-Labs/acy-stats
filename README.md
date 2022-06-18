@@ -23,10 +23,10 @@
 
 ## 使用方式
 
-例子：`http://localhost:3113/api/candles/ETH?preferableChainId=56&period=1h&from=1650234954&to=1650378658&preferableSource=chainlink`
+例子：`http://localhost:3113/api/candles/ALP?preferableChainId=56&period=1h&from=1650234954&to=1650378658&preferableSource=chainlink`
 
 1. `http://localhost:3113/api/candles`：表示 api 地址
-2. `ETH`: token symbol，目前合法的有 `BNB, BTC, ETH`
+2. `ALP`: token symbol，目前合法的有 `ALP`
 3. `preferableChainId=56`: 目前只支持 BSC mainnet，以 `56` 表示（未来可能会增加其他链） 
 4. `period=1h`：有如下 6 种时间粒度，从`src/routes.js`可以看到：
 
