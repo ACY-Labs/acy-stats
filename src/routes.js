@@ -14,6 +14,7 @@ import { Op } from 'sequelize';
 import { sequelize } from './database.js';
 import { ChainlinkPriceModel } from './PricesModel';
 import Web3 from "web3";
+import { getRates, ratesToCandles, getTokenInfo } from './rates';
 
 const BSC_RPC_WEB3 = new Web3(getRpcUrl("BSC"));
 const BSC_CHAINLINK_ABI = getAbi("BSC", "BNB");  // abis are same for all tokens
@@ -554,6 +555,37 @@ export default function routes(app) {
       prices: candles,
       period,
       updatedAt
+    })
+  })
+
+  app.get('/api/rates',async(req,res,next)=>{
+    let token0 = req.query.token0
+    let token1 = req.query.token1
+    let chainId = req.query.chainId
+
+    let result
+    try{
+      result = await getRates(token0,token1,chainId)
+    } catch (e){
+      res.send({
+        token0: token0,
+        token1: token1,
+        chainId: chainId,
+        // rates: rates,
+        test: '632'
+      })
+      next(e)
+      return
+    }
+    
+    const tokenInfo = await getTokenInfo(result)
+    const candles = await ratesToCandles(result.rates)
+
+    res.send({
+      chainId: chainId,
+      tokenInfo: tokenInfo,
+      rates: candles,
+      
     })
   })
 
