@@ -13,6 +13,7 @@ import { chainlink_tokens_name, chainId2Name, BSC, getTokenAddr, getAbi, getChai
 import { Op } from 'sequelize';
 import { sequelize } from './database.js';
 import { ChainlinkPriceModel } from './PricesModel';
+import { CandleModel } from './CandleModel';
 import Web3 from "web3";
 import { getRates, ratesToCandles, getTokenInfo } from './rates';
 
@@ -23,7 +24,21 @@ const IS_PRODUCTION = process.env.NODE_ENV === 'production'
 
 const assets = require(process.env.RAZZLE_ASSETS_MANIFEST);
 
-sequelize.sync().then(() => console.log("[INFO] Database is ready"));
+sequelize.sync().then(() => {
+  console.log("[INFO] Database is ready")
+  // CandleModel.create({
+  //   chainId:56,
+  //   token0:"123456",
+  //   token1:"987564",
+  //   dex:"uniswap v3",
+  //   timestamp:1645489200,
+  //   o:1.5,
+  //   h:1.6,
+  //   l:1.3,
+  //   c:1.4
+  // })
+});
+// sequelizeCandle.sync().then(() => console.log("[INFO] Candle Database is ready"));
 
 
 const cssLinksFromAssets = (assets, entrypoint) => {
@@ -563,29 +578,73 @@ export default function routes(app) {
     let token1 = req.query.token1
     let chainId = req.query.chainId
 
+    // get result from subgraph
     let result
     try{
       result = await getRates(token0,token1,chainId)
     } catch (e){
-      res.send({
-        token0: token0,
-        token1: token1,
-        chainId: chainId,
-        // rates: rates,
-        test: '632'
-      })
+      next(e)
+      return
+    }
+    
+    // extract tokenInfo from result
+    const tokenInfo = await getTokenInfo(result)
+
+    res.send({
+      chainId: chainId,
+      tokenInfo: tokenInfo,
+      rates: result.rates
+    })
+  })
+
+  app.get('/api/rates/candles',async(req,res,next)=>{
+    let token0 = req.query.token0
+    let token1 = req.query.token1
+    let chainId = req.query.chainId
+
+    const period = req.query.period?.toLowerCase()
+    if (!period || !periodsMap[period]) {
+      next(createHttpError(400, `Invalid period. Valid periods are ${Object.keys(periodsMap)}`))
+      return
+    }
+
+    // TODO: search result from database, convert time interval
+    const rates = await CandleModel.findAll({ 
+      attributes: ["timestamp", "o", "h", "l", "c"],
+      where: {
+          chainId: chainId,
+          token0: token0,
+          token1: token1,
+          chainId: chainId,
+          dex: "Uniswap V3"
+      },
+      order: [
+        ['timestamp', 'ASC']
+      ]
+    });
+
+    if (rates){
+      res.send(rates)
+      return
+    }
+
+    // if result cannot be found in database, then get result from subgraph, all result
+    let result
+    try{
+      result = await getRates(token0,token1,chainId)
+    } catch (e){
       next(e)
       return
     }
     
     const tokenInfo = await getTokenInfo(result)
-    const candles = await ratesToCandles(result.rates)
+    const candles = ratesToCandles(result.rates,period,token0,token1,chainId)
+    await CandleModel.bulkCreate(candles, { ignoreDuplicates: true })
 
     res.send({
       chainId: chainId,
       tokenInfo: tokenInfo,
       rates: candles,
-      
     })
   })
 

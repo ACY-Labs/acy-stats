@@ -1,6 +1,7 @@
 import { ApolloClient, InMemoryCache, gql, HttpLink } from '@apollo/client'
 import fetch from 'cross-fetch';
-
+import { getLogger } from './helpers'
+const logger = getLogger('routes')
 const apolloOptions = {
     query: {
       fetchPolicy: 'no-cache'
@@ -43,11 +44,11 @@ export async function getRates(token0,token1,chainId){
     }
     // const queryString = `{
     //    p0: ${fragment(0)}
-    //    p1: ${fragment(1000)}
-    //    p2: ${fragment(2000)}
-    //    p3: ${fragment(3000)}
-    //    p4: ${fragment(4000)}
-    //    p5: ${fragment(5000)}
+      //  p1: ${fragment(1000)}
+      //  p2: ${fragment(2000)}
+      //  p3: ${fragment(3000)}
+      //  p4: ${fragment(4000)}
+      //  p5: ${fragment(5000)}
     // }`
     const queryString = `{
         p0: ${fragment(0)}
@@ -87,6 +88,75 @@ export async function getTokenInfo(result){
   return {token0:token0Info,token1:token1Info}
 }
 
-export async function ratesToCandles(rates){
-  return rates
+function toReadable(ts) {
+  // in UTC+0
+  return (new Date(ts * 1000).toISOString()).replace('T', ' ').replace('.000Z', '')
+}
+
+const periodsMap = {
+  '1m': 60 * 1,
+  '5m': 60 * 5,
+  '15m': 60 * 15,
+  '1h': 60 * 60,
+  '4h': 60 * 60 * 4,
+  '1d': 60 * 60 * 24,
+  '1w': 60 * 60 * 24 * 7
+}
+
+export function ratesToCandles(rates, period='1m', token0, token1, chainId, dex='Uniswap V3') {
+  const periodTime = periodsMap[period]
+
+  if (rates.length < 2) {
+    return []
+  }
+
+  const candles = []
+  const first = rates[rates.length-1]
+  let prevTsGroup = Math.floor(first.timestamp / periodTime) * periodTime
+  let prevRates = Number(first.exchangeRate)
+  let prevTs = first.timestamp
+  let o = prevRates
+  let h = prevRates
+  let l = prevRates
+  let c = prevRates
+  let countPerInterval = 1;  // number of prices in current interval
+  for (let i = rates.length-2; i >= 0; i--) {
+    const ts = rates[i].timestamp;
+    const rate = Number(rates[i].exchangeRate);
+    //const [ts, price] = prices[i]
+    const tsGroup = ts - (ts % periodTime)
+
+    if (prevTs > ts) {
+      logger.warn(`Invalid order prevTs: ${prevTs} (${toReadable(prevTs)}) ts: ${ts} (${toReadable(ts)})`)
+      continue
+    }
+
+    if (prevTsGroup !== tsGroup) {
+      if (countPerInterval == 1) {
+        candles.push({ timestamp: prevTsGroup, o, h: h * 1.0003, l: l * 0.9996, c, token0, token1, chainId, dex });
+      } else {
+        candles.push({ timestamp: prevTsGroup, o, h, l, c, token0, token1, chainId, dex });
+      }
+      countPerInterval = 0;
+      o = c
+      h = o > c ? o : c
+      l = o < c ? o : c
+    }
+    c = rate
+    h = h > rate ? h : rate
+    l = l < rate ? l : rate
+    prevTsGroup = tsGroup
+    prevTs = ts
+    countPerInterval += 1;
+  }
+  // last interval might not be a completed interval, so need to handle separately
+  if (countPerInterval == 1) {
+    //console.log(`final push1, prevTsGroup:${prevTsGroup} h:${h}, l:${l}, o:${o}, c:${c}`);
+    candles.push({ timestamp: prevTsGroup, o, h: h * 1.0003, l: l * 0.9996, c, token0, token1, chainId, dex });
+  } else {
+    //console.log(`final push1, prevTsGroup:${prevTsGroup} h:${h}, l:${l}, o:${o}, c:${c}`);
+    candles.push({ timestamp: prevTsGroup, o, h, l, c, token0, token1, chainId, dex });
+  }
+
+  return candles
 }
