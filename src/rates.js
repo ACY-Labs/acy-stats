@@ -1,7 +1,7 @@
 import { ApolloClient, InMemoryCache, gql, HttpLink } from '@apollo/client'
 import fetch from 'cross-fetch';
 import { getLogger } from './helpers'
-const logger = getLogger('routes')
+const logger = getLogger('rates')
 const apolloOptions = {
     query: {
       fetchPolicy: 'no-cache'
@@ -42,34 +42,20 @@ export async function getRates(token0,token1,chainId){
         id: "${token}"
       ) { name,symbol }\n`
     }
-    // const queryString = `{
-    //    p0: ${fragment(0)}
-      //  p1: ${fragment(1000)}
-      //  p2: ${fragment(2000)}
-      //  p3: ${fragment(3000)}
-      //  p4: ${fragment(4000)}
-      //  p5: ${fragment(5000)}
-    // }`
+
     const queryString = `{
         p0: ${fragment(0)}
         token0: ${token(token0)}
         token1: ${token(token1)}
         ethPrices: bundle(id:1){ethPriceUSD}
     }`
-    // const queryString = `{
-    //   p0: ${fragment(0)}
-    // }`
+
     const query = gql(queryString)
 
     const graphClient = polygonGraphClient
     const { data } = await graphClient.query({query})
     const rates = [
         ...data.p0,
-        // ...data.p1,
-        // ...data.p2,
-        // ...data.p3,
-        // ...data.p4,
-        // ...data.p5
     ]
     const result = {token0:data.token0,token1:data.token1,rates:rates}
     return result
@@ -106,9 +92,9 @@ const periodsMap = {
 export function ratesToCandles(rates, period='1m', token0, token1, chainId, dex='Uniswap V3') {
   const periodTime = periodsMap[period]
 
-  if (rates.length < 2) {
-    return []
-  }
+  // if (rates.length < 2) {
+  //   return []
+  // }
 
   const candles = []
   const first = rates[rates.length-1]
@@ -151,12 +137,97 @@ export function ratesToCandles(rates, period='1m', token0, token1, chainId, dex=
   }
   // last interval might not be a completed interval, so need to handle separately
   if (countPerInterval == 1) {
-    //console.log(`final push1, prevTsGroup:${prevTsGroup} h:${h}, l:${l}, o:${o}, c:${c}`);
+    // console.log(`final push1, prevTsGroup:${prevTsGroup} h:${h}, l:${l}, o:${o}, c:${c}`);
     candles.push({ timestamp: prevTsGroup, o, h: h * 1.0003, l: l * 0.9996, c, token0, token1, chainId, dex });
   } else {
     //console.log(`final push1, prevTsGroup:${prevTsGroup} h:${h}, l:${l}, o:${o}, c:${c}`);
     candles.push({ timestamp: prevTsGroup, o, h, l, c, token0, token1, chainId, dex });
   }
-
   return candles
+}
+
+export async function getRatesByTime(from,to,chainId=56){
+  const entities = "newSwaps"
+    const fragment = () => {
+      return `${entities}(
+        orderBy: timestamp
+        orderDirection: desc
+        where: {
+          timestamp_lt: ${to},
+          timestamp_gte: ${from}
+        }
+      ) { timestamp,token0{id},token1{id},exchangeRate,token0Price,token1Price }\n`
+    }
+
+    const queryString = `{
+        p0: ${fragment()}
+    }`
+
+    const query = gql(queryString)
+
+    const graphClient = polygonGraphClient
+    const { data } = await graphClient.query({query})
+    const rates = [
+        ...data.p0,
+    ]
+    logger.debug("Read %s swap records from subgraph.",rates.length)
+    return rates
+}
+
+export function classifyRawData(rates){
+  let result = {}
+  let count = 0
+  for (let i=0; i<rates.length; i++){
+    const key = `${rates[i].token0.id}:${rates[i].token1.id}`
+    if (!result[key]){
+      result[key] = {}
+      result[key]["token0"] = rates[i].token0.id
+      result[key]["token1"] = rates[i].token1.id
+      result[key]["data"] = [rates[i]]
+      count += 1
+    }else{
+      result[key]["data"].push(rates[i])
+    }
+  }
+  logger.debug("Classified %s records to %s groups.",
+                rates.length,
+                count)
+  return result
+}
+
+export function candle2candle(candle,period='1m'){
+  const periodTime = periodsMap[period]
+  if (periodTime=='1m'){
+    return candle
+  }
+
+  const candlesResult = []
+  const first = candle[0]
+  let prevTs = first.timestamp
+  let o = first.o
+  let h = first.h
+  let l = first.l
+  let c = first.c
+
+  for (let i=1; i<candle.length; i++){
+    const ts = candle[i].timestamp
+    const nextTs = prevTs + periodTime
+    
+    if (ts < nextTs){
+      h = candle[i].h > h ? candle[i].h : h
+      l = candle[i].l < l ? candle[i].l : l
+      c = candle[i].c
+    } else {
+      candlesResult.push({timestamp:prevTs,o,h,l,c})
+      o = candle[i].o
+      h = candle[i].h
+      l = candle[i].l
+      c = candle[i].c
+      prevTs = nextTs
+    }
+  }
+
+  candlesResult.push({timestamp:prevTs,o,h,l,c})
+
+  return candlesResult
 }

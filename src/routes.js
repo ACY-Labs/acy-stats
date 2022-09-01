@@ -15,7 +15,7 @@ import { sequelize } from './database.js';
 import { ChainlinkPriceModel } from './PricesModel';
 import { CandleModel } from './CandleModel';
 import Web3 from "web3";
-import { getRates, ratesToCandles, getTokenInfo } from './rates';
+import { getRates, ratesToCandles, getTokenInfo, getRatesEveryMin, classifyRawData, getRatesByTime, candle2candle } from './rates';
 
 const BSC_RPC_WEB3 = new Web3(getRpcUrl("BSC"));
 const BSC_CHAINLINK_ABI = getAbi("BSC", "BNB");  // abis are same for all tokens
@@ -501,6 +501,51 @@ function createHttpError(code, message) {
   return error
 }
 
+// subgraph hasn't synced to latest data, so need to use past time
+function getTimeNow(){
+  const now = Math.floor(Math.floor(Date.now()/1000)/60)*60 - 16243920
+  // logger.info(now)
+  return now
+}
+
+async function fetchRates(){
+  const from = getTimeNow()
+  const to = getTimeNow()+60
+  const chainId = 56
+
+  // get raw swap data for one minute from subgraph
+  const rawData = await getRatesByTime(from,to,chainId)
+
+  // classify raw data by token pair
+  const classifiedData = classifyRawData(rawData)
+
+  // get candle data from classified data
+  let candleData = []
+  for(let key in classifiedData){
+    let candles = ratesToCandles(
+      classifiedData[key]["data"],'1m',
+      classifiedData[key]["token0"],
+      classifiedData[key]["token1"],56)
+    if (candles.length>1){
+      logger.error("wrong")
+      console.log("classified",classifiedData[key])
+      console.log("candle",candles)
+    }
+    candleData = candleData.concat(candles)
+  }
+
+  // save candle data into database
+  await CandleModel.bulkCreate(candleData, { ignoreDuplicates: true })
+  logger.info("Save %s candle records to database",candleData.length)
+  setTimeout(fetchRates,1000*60*1)
+}
+
+if (!process.env.DISABLE_PRICES) {
+  // getTimestamp(0)
+  // getTimeNow()
+  fetchRates()
+}
+
 export default function routes(app) {
   // app.get('/api/earn/:account', async (req, res, next) => {
   //   const chainName = req.query.chain || 'arbitrum'
@@ -587,7 +632,7 @@ export default function routes(app) {
       return
     }
     
-    // extract tokenInfo from result
+    // extract token info from result
     const tokenInfo = await getTokenInfo(result)
 
     res.send({
@@ -608,7 +653,7 @@ export default function routes(app) {
       return
     }
 
-    // TODO: search result from database, convert time interval
+    // search candle data from database
     const rates = await CandleModel.findAll({ 
       attributes: ["timestamp", "o", "h", "l", "c"],
       where: {
@@ -623,8 +668,10 @@ export default function routes(app) {
       ]
     });
 
+    // convert time interval for candle data
     if (rates){
-      res.send(rates)
+      const result = candle2candle(rates,period)
+      res.send(result)
       return
     }
 
