@@ -1,6 +1,7 @@
 import { ApolloClient, InMemoryCache, gql, HttpLink } from '@apollo/client'
 import fetch from 'cross-fetch';
 import { getLogger } from './helpers'
+import { CandleModel } from './CandleModel';
 const logger = getLogger('rates')
 const apolloOptions = {
     query: {
@@ -230,4 +231,34 @@ export function candle2candle(candle,period='1m'){
   candlesResult.push({timestamp:prevTs,o,h,l,c})
 
   return candlesResult
+}
+
+export async function fetchRates(from,chainId=56){
+  const to = from + 60
+
+  // get raw swap data for one minute from subgraph
+  const rawData = await getRatesByTime(from,to,chainId)
+
+  // classify raw data by token pair
+  const classifiedData = classifyRawData(rawData)
+
+  // get candle data from classified data
+  let candleData = []
+  for(let key in classifiedData){
+    let candles = ratesToCandles(
+      classifiedData[key]["data"],'1m',
+      classifiedData[key]["token0"],
+      classifiedData[key]["token1"],56)
+    if (candles.length>1){
+      logger.error("wrong")
+      console.log("classified",classifiedData[key])
+      console.log("candle",candles)
+    }
+    candleData = candleData.concat(candles)
+  }
+
+  // save candle data into database
+  await CandleModel.bulkCreate(candleData, { ignoreDuplicates: true })
+  logger.info("Save %s candle records(old) to database, from %s to %s",candleData.length,from,to)
+  // setTimeout(fetchRates,1000*60*1)
 }

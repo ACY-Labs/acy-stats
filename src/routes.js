@@ -15,7 +15,7 @@ import { sequelize } from './database.js';
 import { ChainlinkPriceModel } from './PricesModel';
 import { CandleModel } from './CandleModel';
 import Web3 from "web3";
-import { getRates, ratesToCandles, getTokenInfo, getRatesEveryMin, classifyRawData, getRatesByTime, candle2candle } from './rates';
+import { getRates, ratesToCandles, getTokenInfo, getRatesEveryMin, classifyRawData, getRatesByTime, candle2candle, fetchRates } from './rates';
 
 const BSC_RPC_WEB3 = new Web3(getRpcUrl("BSC"));
 const BSC_CHAINLINK_ABI = getAbi("BSC", "BNB");  // abis are same for all tokens
@@ -503,14 +503,14 @@ function createHttpError(code, message) {
 
 // subgraph hasn't synced to latest data, so need to use past time
 function getTimeNow(){
-  const now = Math.floor(Math.floor(Date.now()/1000)/60)*60 - 16243920
+  const now = Math.floor(Math.floor(Date.now()/1000)/60)*60 - 22543920
   // logger.info(now)
   return now
 }
 
-async function fetchRates(){
-  const from = getTimeNow()
-  const to = getTimeNow()+60
+async function fetchNewRates(){
+  const from = getTimeNow()-60
+  const to = getTimeNow()
   const chainId = 56
 
   // get raw swap data for one minute from subgraph
@@ -537,13 +537,45 @@ async function fetchRates(){
   // save candle data into database
   await CandleModel.bulkCreate(candleData, { ignoreDuplicates: true })
   logger.info("Save %s candle records to database",candleData.length)
-  setTimeout(fetchRates,1000*60*1)
+  setTimeout(fetchNewRates,1000*60*1)
 }
 
 if (!process.env.DISABLE_PRICES) {
   // getTimestamp(0)
   // getTimeNow()
-  fetchRates()
+  fetchNewRates()
+}
+if (!process.env.DISABLE_PRICES) {
+  // getTimestamp(0)
+  // getTimeNow()
+  fetchOldRates()
+}
+
+async function fetchOldRates(chainId=56){
+  // get time now
+  const to = getTimeNow()
+  let latestCandle = await CandleModel.findOne({
+    where: { 
+      chainId:chainId,
+      dex: "Uniswap V3" 
+    },
+    order: [ ['timestamp', 'DESC']],
+  })
+
+  // get latest time in database record
+  let latestTs
+  if (latestCandle === null){
+    return
+  } else{
+    latestTs = latestCandle.timestamp + 60
+  }
+
+  // get old rates from database latest time to time now
+  logger.info("Start fetching old rates...")
+  while (latestTs < to-60){
+    fetchRates(latestTs)
+    latestTs += 60
+  }
 }
 
 export default function routes(app) {
@@ -618,6 +650,7 @@ export default function routes(app) {
     })
   })
 
+  // get rates from subgraph
   app.get('/api/rates',async(req,res,next)=>{
     let token0 = req.query.token0
     let token1 = req.query.token1
@@ -642,6 +675,7 @@ export default function routes(app) {
     })
   })
 
+  // get candles record from database
   app.get('/api/rates/candles',async(req,res,next)=>{
     let token0 = req.query.token0
     let token1 = req.query.token1
@@ -660,7 +694,6 @@ export default function routes(app) {
           chainId: chainId,
           token0: token0,
           token1: token1,
-          chainId: chainId,
           dex: "Uniswap V3"
       },
       order: [
