@@ -36,7 +36,7 @@ export async function getRates(token0,token1,chainId){
           token0_: {id:"${token0}"},
           token1_: {id:"${token1}"}
         }
-      ) { timestamp,transaction{id},exchangeRate,token0Price,token1Price }\n`
+      ) { timestamp,transaction{id},exchangeRate,token0Price,token1Price,amount0,amount1 }\n`
     }
     const token = (token) => {
       return `newToken(

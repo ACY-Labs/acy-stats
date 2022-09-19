@@ -575,6 +575,7 @@ async function fetchOldRates(chainId=56){
   while (latestTs < to-60){
     fetchRates(latestTs)
     latestTs += 60
+    await sleep(100)
   }
 }
 
