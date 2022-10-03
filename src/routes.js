@@ -15,7 +15,8 @@ import { sequelize } from './database.js';
 import { ChainlinkPriceModel } from './PricesModel';
 import { CandleModel } from './CandleModel';
 import Web3 from "web3";
-import { getRates, ratesToCandles, getTokenInfo, getRatesEveryMin, classifyRawData, getRatesByTime, candle2candle, fetchRates } from './rates';
+import { getRates, ratesToCandles, getTokenInfo, getRatesEveryMin, classifyRawData, getRatesByTime, candle2candle, fetchRates, getTokens } from './rates';
+import { TokenModel } from './TokenModel';
 
 const BSC_RPC_WEB3 = new Web3(getRpcUrl("BSC"));
 const BSC_CHAINLINK_ABI = getAbi("BSC", "BNB");  // abis are same for all tokens
@@ -26,17 +27,7 @@ const assets = require(process.env.RAZZLE_ASSETS_MANIFEST);
 
 sequelize.sync().then(() => {
   console.log("[INFO] Database is ready")
-  // CandleModel.create({
-  //   chainId:56,
-  //   token0:"123456",
-  //   token1:"987564",
-  //   dex:"uniswap v3",
-  //   timestamp:1645489200,
-  //   o:1.5,
-  //   h:1.6,
-  //   l:1.3,
-  //   c:1.4
-  // })
+  // TokenModel.create({chainId:56,name:"aaa",address:"0x00",symbol:"A",decimals:18})
 });
 // sequelizeCandle.sync().then(() => console.log("[INFO] Candle Database is ready"));
 
@@ -585,6 +576,35 @@ async function fetchOldRates(chainId=56){
   }
 }
 
+async function fetchToken(chainId=56){
+  const tokenList = await TokenModel.findAll({  // get database token list
+    attributes: ["chainId", "name", "address", "symbol", "logoURI"],
+    where:{
+      chainId: chainId
+    }
+  })
+  logger.info("Database token amount: ",tokenList.length)
+
+  let newTokenList = await getTokens(chainId)   // get the first 1000 token
+  let n = 1000
+  let _newTokenList
+  do{                                     // get the remaining token
+    _newTokenList = await getTokens(chainId,n)
+    newTokenList = newTokenList.concat(_newTokenList)
+    n += 1000
+  }while(_newTokenList.length!=0)
+  logger.info("Subgraph token amount: ",newTokenList.length)
+
+  if (tokenList.length!=newTokenList.length){
+    await TokenModel.bulkCreate(newTokenList,{ignoreDuplicates:true})   // save to database
+    logger.info("Save %s tokens to database",newTokenList.length)
+  }
+
+  setTimeout(fetchToken,1000*60*60)
+}
+
+fetchToken(56)
+
 export default function routes(app) {
   // app.get('/api/earn/:account', async (req, res, next) => {
   //   const chainName = req.query.chain || 'arbitrum'
@@ -733,6 +753,18 @@ export default function routes(app) {
       tokenInfo: tokenInfo,
       rates: candles,
     })
+  })
+
+  app.get('/api/tokens',async(req,res,next)=>{
+    let chainId = req.query.chainId
+    const tokenList = await TokenModel.findAll({
+      attributes: ["chainId", "name", "address", "symbol", "decimals", "logoURI"],
+      where:{
+        chainId: chainId
+      }
+    })
+    res.send(tokenList)
+    return
   })
 
   const cssAssetsTag = cssLinksFromAssets(assets, 'client')

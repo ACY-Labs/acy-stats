@@ -262,3 +262,30 @@ export async function fetchRates(from,chainId=56){
   logger.info("Save %s candle records(old) to database, from %s to %s",candleData.length,from,to)
   // setTimeout(fetchRates,1000*60*1)
 }
+
+export async function getTokens(chainId,start=0){
+  const entities = "newTokens"
+  const fragment = () => {
+    return `${entities}(
+      first: 1000
+      skip: ${start}
+    ) { id,symbol,name,decimals }\n`
+  }
+
+  const queryString = `{
+      p0: ${fragment()}
+  }`
+
+  const query = gql(queryString)
+
+  const graphClient = polygonGraphClient
+  const { data } = await graphClient.query({query})
+  const tokens = [
+      ...data.p0,
+  ]
+  for(let i=0;i<tokens.length;i++){
+    tokens[i]["chainId"] = chainId
+    tokens[i]["address"] = tokens[i].id
+  }
+  return tokens
+}
