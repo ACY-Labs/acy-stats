@@ -565,6 +565,12 @@ async function fetchOldRates(chainId=56){
   // get latest time in database record
   let latestTs
   if (latestCandle === null){
+    latestTs = 1640452440
+    while (latestTs < to-60){
+      fetchRates(latestTs)
+      latestTs += 60
+      await sleep(100)
+    }
     return
   } else{
     latestTs = latestCandle.timestamp + 60
