@@ -13,7 +13,10 @@ import { chainlink_tokens_name, chainId2Name, BSC, getTokenAddr, getAbi, getChai
 import { Op } from 'sequelize';
 import { sequelize } from './database.js';
 import { ChainlinkPriceModel } from './PricesModel';
+import { CandleModel } from './CandleModel';
 import Web3 from "web3";
+import { getRates, ratesToCandles, getTokenInfo, getRatesEveryMin, classifyRawData, getRatesByTime, candle2candle, fetchRates, getTokens } from './rates';
+import { TokenModel } from './TokenModel';
 
 const BSC_RPC_WEB3 = new Web3(getRpcUrl("BSC"));
 const BSC_CHAINLINK_ABI = getAbi("BSC", "BNB");  // abis are same for all tokens
@@ -22,7 +25,11 @@ const IS_PRODUCTION = process.env.NODE_ENV === 'production'
 
 const assets = require(process.env.RAZZLE_ASSETS_MANIFEST);
 
-sequelize.sync().then(() => console.log("[INFO] Database is ready"));
+sequelize.sync().then(() => {
+  console.log("[INFO] Database is ready")
+  // TokenModel.create({chainId:56,name:"aaa",address:"0x00",symbol:"A",decimals:18})
+});
+// sequelizeCandle.sync().then(() => console.log("[INFO] Candle Database is ready"));
 
 
 const cssLinksFromAssets = (assets, entrypoint) => {
@@ -485,6 +492,119 @@ function createHttpError(code, message) {
   return error
 }
 
+// subgraph hasn't synced to latest data, so need to use past time
+function getTimeNow(){
+  const now = Math.floor(Math.floor(Date.now()/1000)/60)*60 - 22543920
+  // logger.info(now)
+  return now
+}
+
+async function fetchNewRates(){
+  const from = getTimeNow()-60
+  const to = getTimeNow()
+  const chainId = 56
+
+  // get raw swap data for one minute from subgraph
+  const rawData = await getRatesByTime(from,to,chainId)
+
+  // classify raw data by token pair
+  const classifiedData = classifyRawData(rawData)
+
+  // get candle data from classified data
+  let candleData = []
+  for(let key in classifiedData){
+    let candles = ratesToCandles(
+      classifiedData[key]["data"],'1m',
+      classifiedData[key]["token0"],
+      classifiedData[key]["token1"],56)
+    if (candles.length>1){
+      logger.error("wrong")
+      console.log("classified",classifiedData[key])
+      console.log("candle",candles)
+    }
+    candleData = candleData.concat(candles)
+  }
+
+  // save candle data into database
+  await CandleModel.bulkCreate(candleData, { ignoreDuplicates: true })
+  logger.info("Save %s candle records to database",candleData.length)
+  setTimeout(fetchNewRates,1000*60*1)
+}
+
+if (!process.env.DISABLE_PRICES) {
+  // getTimestamp(0)
+  // getTimeNow()
+  fetchNewRates()
+}
+if (!process.env.DISABLE_PRICES) {
+  // getTimestamp(0)
+  // getTimeNow()
+  fetchOldRates()
+}
+
+async function fetchOldRates(chainId=56){
+  // get time now
+  const to = getTimeNow()
+  let latestCandle = await CandleModel.findOne({
+    where: { 
+      chainId:chainId,
+      dex: "Uniswap V3" 
+    },
+    order: [ ['timestamp', 'DESC']],
+  })
+
+  // get latest time in database record
+  let latestTs
+  if (latestCandle === null){
+    latestTs = 1640452440
+    while (latestTs < to-60){
+      fetchRates(latestTs)
+      latestTs += 60
+      await sleep(100)
+    }
+    return
+  } else{
+    latestTs = latestCandle.timestamp + 60
+  }
+
+  // get old rates from database latest time to time now
+  logger.info("Start fetching old rates...")
+  while (latestTs < to-60){
+    fetchRates(latestTs)
+    latestTs += 60
+    await sleep(100)
+  }
+}
+
+async function fetchToken(chainId=56){
+  const tokenList = await TokenModel.findAll({  // get database token list
+    attributes: ["chainId", "name", "address", "symbol", "logoURI"],
+    where:{
+      chainId: chainId
+    }
+  })
+  logger.info("Database token amount: ",tokenList.length)
+
+  let newTokenList = await getTokens(chainId)   // get the first 1000 token
+  let n = 1000
+  let _newTokenList
+  do{                                     // get the remaining token
+    _newTokenList = await getTokens(chainId,n)
+    newTokenList = newTokenList.concat(_newTokenList)
+    n += 1000
+  }while(_newTokenList.length!=0)
+  logger.info("Subgraph token amount: ",newTokenList.length)
+
+  if (tokenList.length!=newTokenList.length){
+    await TokenModel.bulkCreate(newTokenList,{ignoreDuplicates:true})   // save to database
+    logger.info("Save %s tokens to database",newTokenList.length)
+  }
+
+  setTimeout(fetchToken,1000*60*60)
+}
+
+fetchToken(56)
+
 export default function routes(app) {
   // app.get('/api/earn/:account', async (req, res, next) => {
   //   const chainName = req.query.chain || 'arbitrum'
@@ -555,6 +675,96 @@ export default function routes(app) {
       period,
       updatedAt
     })
+  })
+
+  // get rates from subgraph
+  app.get('/api/rates',async(req,res,next)=>{
+    let token0 = req.query.token0
+    let token1 = req.query.token1
+    let chainId = req.query.chainId
+
+    // get result from subgraph
+    let result
+    try{
+      result = await getRates(token0,token1,chainId)
+    } catch (e){
+      next(e)
+      return
+    }
+    
+    // extract token info from result
+    const tokenInfo = await getTokenInfo(result)
+
+    res.send({
+      chainId: chainId,
+      tokenInfo: tokenInfo,
+      rates: result.rates
+    })
+  })
+
+  // get candles record from database
+  app.get('/api/rates/candles',async(req,res,next)=>{
+    let token0 = req.query.token0
+    let token1 = req.query.token1
+    let chainId = req.query.chainId
+
+    const period = req.query.period?.toLowerCase()
+    if (!period || !periodsMap[period]) {
+      next(createHttpError(400, `Invalid period. Valid periods are ${Object.keys(periodsMap)}`))
+      return
+    }
+
+    // search candle data from database
+    const rates = await CandleModel.findAll({ 
+      attributes: ["timestamp", "o", "h", "l", "c"],
+      where: {
+          chainId: chainId,
+          token0: token0,
+          token1: token1,
+          dex: "Uniswap V3"
+      },
+      order: [
+        ['timestamp', 'ASC']
+      ]
+    });
+
+    // convert time interval for candle data
+    if (rates){
+      const result = candle2candle(rates,period)
+      res.send(result)
+      return
+    }
+
+    // if result cannot be found in database, then get result from subgraph, all result
+    let result
+    try{
+      result = await getRates(token0,token1,chainId)
+    } catch (e){
+      next(e)
+      return
+    }
+    
+    const tokenInfo = await getTokenInfo(result)
+    const candles = ratesToCandles(result.rates,period,token0,token1,chainId)
+    await CandleModel.bulkCreate(candles, { ignoreDuplicates: true })
+
+    res.send({
+      chainId: chainId,
+      tokenInfo: tokenInfo,
+      rates: candles,
+    })
+  })
+
+  app.get('/api/tokens',async(req,res,next)=>{
+    let chainId = req.query.chainId
+    const tokenList = await TokenModel.findAll({
+      attributes: ["chainId", "name", "address", "symbol", "decimals", "logoURI"],
+      where:{
+        chainId: chainId
+      }
+    })
+    res.send(tokenList)
+    return
   })
 
   const cssAssetsTag = cssLinksFromAssets(assets, 'client')
