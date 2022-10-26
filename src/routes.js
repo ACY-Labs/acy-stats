@@ -560,8 +560,12 @@ async function fetchOldRates(chainId=56,to){
   if (latestCandle === null){
     latestTs = 1640452440
     while (latestTs < to-60){
-      fetchRates(latestTs)
-      latestTs += 60
+      try{
+        fetchRates(latestTs)
+        latestTs += 60
+      }catch(ex){
+        logger.error(ex)
+      }
       await sleep(100)
     }
     return
@@ -748,24 +752,26 @@ export default function routes(app) {
     let token0 = req.query.token0
     let token1 = req.query.token1
     let chainId = req.query.chainId
+    let from = req.query.from
+    let to = req.query.to
 
     // get result from subgraph
     let result
     try{
-      result = await getRates(token0,token1,chainId)
+      result = await getRates(token0,token1,chainId,from,to)
+
+      // extract token info from result
+      const tokenInfo = await getTokenInfo(result)
+
+      res.send({
+        chainId: chainId,
+        tokenInfo: tokenInfo,
+        rates: result.rates
+      })
     } catch (e){
       next(e)
       return
     }
-    
-    // extract token info from result
-    const tokenInfo = await getTokenInfo(result)
-
-    res.send({
-      chainId: chainId,
-      tokenInfo: tokenInfo,
-      rates: result.rates
-    })
   })
 
   // get candles record from database
@@ -773,6 +779,8 @@ export default function routes(app) {
     let token0 = req.query.token0
     let token1 = req.query.token1
     let chainId = req.query.chainId
+    let from = req.query.from
+    let to = req.query.to
 
     const period = req.query.period?.toLowerCase()
     if (!period || !periodsMap[period]) {
@@ -787,7 +795,8 @@ export default function routes(app) {
           chainId: chainId,
           token0: token0,
           token1: token1,
-          dex: "Uniswap V3"
+          dex: "Uniswap V3",
+          timestamp: { [Op.between] : [from, to] }
       },
       order: [
         ['timestamp', 'ASC']
@@ -804,7 +813,7 @@ export default function routes(app) {
     // if result cannot be found in database, then get result from subgraph, all result
     let result
     try{
-      result = await getRates(token0,token1,chainId)
+      result = await getRates(token0,token1,chainId,from,to)
     } catch (e){
       next(e)
       return

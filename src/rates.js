@@ -40,7 +40,9 @@ export async function getRates(token0,token1,chainId,from,to){
         orderDirection: desc
         where: {
           token0_: {id:"${token0}"},
-          token1_: {id:"${token1}"}
+          token1_: {id:"${token1}"},
+          timestamp_gte: ${from},
+          timestamp_lte: ${to}
         }
       ) { timestamp,transaction{id},exchangeRate,token0Price,token1Price,amount0,amount1 }\n`
     }
