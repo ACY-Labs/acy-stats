@@ -24,7 +24,13 @@ const polygonGraphClient = new ApolloClient({
     defaultOptions: apolloOptions
 })
 
-export async function getRates(token0,token1,chainId){
+const polygonGraphClientTest = new ApolloClient({
+    link: new HttpLink({ uri: 'https://api.thegraph.com/subgraphs/id/QmUkVaXRD8Jog5V9HpP1KPCGtswLDC34X4hgg4p5LKYdX5', fetch }),
+    cache: new InMemoryCache(),
+    defaultOptions: apolloOptions
+})
+
+export async function getRates(token0,token1,chainId,from,to){
     const entities = "newSwaps"
     const fragment = (skip) => {
       return `${entities}(
@@ -286,6 +292,49 @@ export async function getTokens(chainId,start=0){
   for(let i=0;i<tokens.length;i++){
     tokens[i]["chainId"] = chainId
     tokens[i]["address"] = tokens[i].id
+    tokens[i]["name"] = tokens[i]["name"]?tokens[i]["name"]:"NULL"
+    tokens[i]["symbol"] = tokens[i]["symbol"]?tokens[i]["symbol"]:"NULL"
+  }
+  return tokens
+}
+
+export async function getTokenOverview(chainId,time,orderBy,orderDirection){
+  const entities = "poolDayDatas"
+  const fragment = () => {
+    return `${entities}(
+      where: {
+        date: ${time}
+      }
+      orderBy: ${orderBy},
+      orderDirection: ${orderDirection}
+      first: 15
+    ) {
+      pool{
+        token0{name}
+        token1{name}
+      }
+      volumeUSD
+      priceVariation
+      txCount
+      liquidity
+    }\n`
+  }
+
+  const queryString = `{
+      p0: ${fragment()}
+  }`
+
+  const query = gql(queryString)
+
+  const graphClient = polygonGraphClientTest
+  const { data } = await graphClient.query({query})
+  const tokens = [
+      ...data.p0,
+  ]
+  for (let i=0;i<tokens.length;i++){
+    tokens[i]["token0"] = tokens[i]["pool"]["token0"]["name"]
+    tokens[i]["token1"] = tokens[i]["pool"]["token1"]["name"]
+    delete tokens[i]["pool"]
   }
   return tokens
 }

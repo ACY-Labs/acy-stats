@@ -15,7 +15,7 @@ import { sequelize } from './database.js';
 import { ChainlinkPriceModel } from './PricesModel';
 import { CandleModel } from './CandleModel';
 import Web3 from "web3";
-import { getRates, ratesToCandles, getTokenInfo, getRatesEveryMin, classifyRawData, getRatesByTime, candle2candle, fetchRates, getTokens } from './rates';
+import { getRates, ratesToCandles, getTokenInfo, getRatesEveryMin, classifyRawData, getRatesByTime, candle2candle, fetchRates, getTokens, getTokenOverview } from './rates';
 import { TokenModel } from './TokenModel';
 
 const BSC_RPC_WEB3 = new Web3(getRpcUrl("BSC"));
@@ -494,7 +494,7 @@ function createHttpError(code, message) {
 
 // subgraph hasn't synced to latest data, so need to use past time
 function getTimeNow(){
-  const now = Math.floor(Math.floor(Date.now()/1000)/60)*60 - 22543920
+  const now = Math.floor(Math.floor(Date.now()/1000)/60)*60
   // logger.info(now)
   return now
 }
@@ -505,46 +505,48 @@ async function fetchNewRates(){
   const chainId = 56
 
   // get raw swap data for one minute from subgraph
-  const rawData = await getRatesByTime(from,to,chainId)
+  try {
+    const rawData = await getRatesByTime(from,to,chainId)
 
-  // classify raw data by token pair
-  const classifiedData = classifyRawData(rawData)
+    // classify raw data by token pair
+    const classifiedData = classifyRawData(rawData)
 
-  // get candle data from classified data
-  let candleData = []
-  for(let key in classifiedData){
-    let candles = ratesToCandles(
-      classifiedData[key]["data"],'1m',
-      classifiedData[key]["token0"],
-      classifiedData[key]["token1"],56)
-    if (candles.length>1){
-      logger.error("wrong")
-      console.log("classified",classifiedData[key])
-      console.log("candle",candles)
+    // get candle data from classified data
+    let candleData = []
+    for(let key in classifiedData){
+      let candles = ratesToCandles(
+        classifiedData[key]["data"],'1m',
+        classifiedData[key]["token0"],
+        classifiedData[key]["token1"],56)
+      if (candles.length>1){
+        logger.error("wrong")
+        console.log("classified",classifiedData[key])
+        console.log("candle",candles)
+      }
+      candleData = candleData.concat(candles)
     }
-    candleData = candleData.concat(candles)
+
+    // save candle data into database
+    await CandleModel.bulkCreate(candleData, { ignoreDuplicates: true })
+    logger.info("Save %s candle records to database",candleData.length)
+
+  }catch(ex){
+    logger.error(ex)
   }
 
-  // save candle data into database
-  await CandleModel.bulkCreate(candleData, { ignoreDuplicates: true })
-  logger.info("Save %s candle records to database",candleData.length)
   setTimeout(fetchNewRates,1000*60*1)
 }
 
 if (!process.env.DISABLE_PRICES) {
   // getTimestamp(0)
-  // getTimeNow()
+  let timeNow = getTimeNow()
+  // fetchOldRates(56,timeNow)
+  checkOldRates(56,timeNow)
   fetchNewRates()
 }
-if (!process.env.DISABLE_PRICES) {
-  // getTimestamp(0)
-  // getTimeNow()
-  fetchOldRates()
-}
-
-async function fetchOldRates(chainId=56){
+async function fetchOldRates(chainId=56,to){
   // get time now
-  const to = getTimeNow()
+  // const to = getTimeNow()
   let latestCandle = await CandleModel.findOne({
     where: { 
       chainId:chainId,
@@ -570,10 +572,56 @@ async function fetchOldRates(chainId=56){
   // get old rates from database latest time to time now
   logger.info("Start fetching old rates...")
   while (latestTs < to-60){
-    fetchRates(latestTs)
-    latestTs += 60
+    logger.warn("latest",latestTs)
+    try{
+      fetchRates(latestTs)
+      latestTs += 60
+    }catch(ex){
+      logger.error(ex)
+    }
     await sleep(100)
   }
+}
+
+async function checkOldRates(chainId=56,to){
+  // get time now
+  // const to = getTimeNow()
+  logger.info("Start checking old rates...")
+  let oldestCandle = await CandleModel.findOne({
+    where: { 
+      chainId:chainId,
+      dex: "Uniswap V3" 
+    },
+    order: [ ['timestamp', 'ASC']],
+  })
+
+  // get oldest time in database record
+  let oldestTs = oldestCandle.timestamp
+  // oldestTs = 1643400540   // for development
+  let count = 0
+  while (oldestTs<to){
+    let oldCandle = await CandleModel.findOne({
+      where: {
+        chainId:chainId,
+        dex: "Uniswap V3",
+        timestamp:oldestTs
+      }})
+    if (oldCandle === null){
+      try{
+        fetchRates(oldestTs)
+      }catch(ex){
+        logger.error(ex)
+      }
+    } 
+    count+=1
+    if(count==60){
+      logger.info("Done checking old rates from %s to %s",oldestTs-600,oldestTs)
+      count=0
+    }
+    oldestTs += 60
+    to = getTimeNow()
+  }
+  logger.info("Finish checking old rates...")
 }
 
 async function fetchToken(chainId=56){
@@ -585,25 +633,43 @@ async function fetchToken(chainId=56){
   })
   logger.info("Database token amount: ",tokenList.length)
 
-  let newTokenList = await getTokens(chainId)   // get the first 1000 token
-  let n = 1000
-  let _newTokenList
-  do{                                     // get the remaining token
-    _newTokenList = await getTokens(chainId,n)
-    newTokenList = newTokenList.concat(_newTokenList)
-    n += 1000
-  }while(_newTokenList.length!=0)
-  logger.info("Subgraph token amount: ",newTokenList.length)
+  try{
+    let newTokenList = await getTokens(chainId)   // get the first 1000 token
 
-  if (tokenList.length!=newTokenList.length){
-    await TokenModel.bulkCreate(newTokenList,{ignoreDuplicates:true})   // save to database
-    logger.info("Save %s tokens to database",newTokenList.length)
+    let n = 1000
+    let _newTokenList
+    do{                                     // get the remaining token
+      _newTokenList = await getTokens(chainId,n)
+      newTokenList = newTokenList.concat(_newTokenList)
+      n += 1000
+    }while(_newTokenList.length!=0)
+    logger.info("Subgraph token amount: ",newTokenList.length)
+
+    if (tokenList.length!=newTokenList.length){
+      await TokenModel.bulkCreate(newTokenList,{ignoreDuplicates:true})   // save to database
+      logger.info("Save %s tokens to database",newTokenList.length)
+    }
+
+  }catch(ex){
+    logger.error(ex)
   }
-
+  
   setTimeout(fetchToken,1000*60*60)
 }
 
 fetchToken(56)
+
+const orderByMap = {
+  'topvolume': ['volumeUSD','desc'],
+  'winners': ['priceVariation','desc'],
+  'losers': ['priceVariation','asc'],
+}
+
+function getTimestamp0000(timestamp){
+  let date = new Date(timestamp*1000)
+  date.setHours(0,0,0,0)
+  return date.getTime()/1000
+}
 
 export default function routes(app) {
   // app.get('/api/earn/:account', async (req, res, next) => {
@@ -763,6 +829,21 @@ export default function routes(app) {
         chainId: chainId
       }
     })
+    res.send(tokenList)
+    return
+  })
+
+  app.get('/api/tokens-overview',async(req,res,next)=>{
+    let chainId = req.query.chainId
+    let orderBy = req.query.orderBy
+    let time = getTimestamp0000()
+    time = 1640217600  // for development
+    if (!orderBy || !orderByMap[orderBy]) {
+      next(createHttpError(400, `Invalid order. Valid orders are ${Object.keys(orderByMap)}`))
+      return
+    }
+    const tokenList = await getTokenOverview(chainId,time,orderByMap[orderBy][0],orderByMap[orderBy][1])
+
     res.send(tokenList)
     return
   })
