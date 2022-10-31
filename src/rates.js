@@ -2,6 +2,7 @@ import { ApolloClient, InMemoryCache, gql, HttpLink } from '@apollo/client'
 import fetch from 'cross-fetch';
 import { getLogger } from './helpers'
 import { CandleModel } from './CandleModel';
+import { Op } from 'sequelize';
 const logger = getLogger('rates')
 const apolloOptions = {
     query: {
@@ -339,4 +340,57 @@ export async function getTokenOverview(chainId,time,orderBy,orderDirection){
     delete tokens[i]["pool"]
   }
   return tokens
+}
+
+function safeDiv(n1,n2){
+  if (n2==0){
+    return 0
+  }
+  return n1/n2
+}
+
+export async function calculateCandles(token0,token1,chainId,from,to,period){
+  const WMATIC = "0x0d500b1d8e8ef31e21c99d1db9a6444d3adf1270"
+  const periodTime = periodsMap[period]
+  const candlesToken0 = await CandleModel.findAll({
+    where: {
+      token0:WMATIC,
+      token1:token0,
+      chainId:chainId,
+      dex:"Uniswap V3",
+      timestamp: { [Op.between] : [from, to] }
+    },
+    order: [
+      ['timestamp', 'ASC'],
+    ],
+  })
+  const candlesToken1 = await CandleModel.findAll({
+    where: {
+      token0:WMATIC,
+      token1:token1,
+      chainId:chainId,
+      dex:"Uniswap V3",
+      timestamp: { [Op.between] : [from, to] }
+    },
+    order: [
+      ['timestamp', 'ASC'],
+    ],
+  })
+  const candles = []
+  const test = {token1:candlesToken1,token0:candlesToken0}
+  for (let i=0;i<candlesToken0.length;i++){
+    let candleToken1 = candlesToken1.find(candle=>
+      candle.timestamp==candlesToken0[i].timestamp
+      )
+    if (candleToken1){
+      candles.push({
+        timestamp:candlesToken0[i].timestamp,
+        o:safeDiv(candleToken1.o,candlesToken0[i].o),
+        h:safeDiv(candleToken1.h,candlesToken0[i].h),
+        l:safeDiv(candleToken1.l,candlesToken0[i].l),
+        c:safeDiv(candleToken1.c,candlesToken0[i].c),
+      })
+    }
+  }
+  return candles
 }

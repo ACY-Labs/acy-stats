@@ -15,7 +15,19 @@ import { sequelize } from './database.js';
 import { ChainlinkPriceModel } from './PricesModel';
 import { CandleModel } from './CandleModel';
 import Web3 from "web3";
-import { getRates, ratesToCandles, getTokenInfo, getRatesEveryMin, classifyRawData, getRatesByTime, candle2candle, fetchRates, getTokens, getTokenOverview } from './rates';
+import { 
+  getRates, 
+  ratesToCandles, 
+  getTokenInfo, 
+  getRatesEveryMin, 
+  classifyRawData, 
+  getRatesByTime, 
+  candle2candle, 
+  fetchRates, 
+  getTokens, 
+  getTokenOverview,
+  calculateCandles
+} from './rates';
 import { TokenModel } from './TokenModel';
 
 const BSC_RPC_WEB3 = new Web3(getRpcUrl("BSC"));
@@ -601,7 +613,7 @@ async function checkOldRates(chainId=56,to){
 
   // get oldest time in database record
   let oldestTs = oldestCandle.timestamp
-  // oldestTs = 1643400540   // for development
+  // oldestTs = 1644124020   // for development
   let count = 0
   while (oldestTs<to){
     let oldCandle = await CandleModel.findOne({
@@ -612,7 +624,7 @@ async function checkOldRates(chainId=56,to){
       }})
     if (oldCandle === null){
       try{
-        fetchRates(oldestTs)
+        await fetchRates(oldestTs)
       }catch(ex){
         logger.error(ex)
       }
@@ -782,6 +794,17 @@ export default function routes(app) {
     let from = req.query.from
     let to = req.query.to
 
+    let timestampOP = {}
+    if (from&&to){
+      timestampOP = { [Op.between] : [from, to] }
+    }else if(from){
+      timestampOP = { [Op.gte] : [from] }
+    }else if(to){
+      timestampOP = { [Op.lte] : [to] }
+    }else{
+      timestampOP = { [Op.gte] : 0 }
+    }
+
     const period = req.query.period?.toLowerCase()
     if (!period || !periodsMap[period]) {
       next(createHttpError(400, `Invalid period. Valid periods are ${Object.keys(periodsMap)}`))
@@ -796,7 +819,7 @@ export default function routes(app) {
           token0: token0,
           token1: token1,
           dex: "Uniswap V3",
-          timestamp: { [Op.between] : [from, to] }
+          timestamp: timestampOP
       },
       order: [
         ['timestamp', 'ASC']
@@ -804,30 +827,18 @@ export default function routes(app) {
     });
 
     // convert time interval for candle data
-    if (rates){
+    if (rates.length!=0){
       const result = candle2candle(rates,period)
       res.send(result)
       return
     }
 
     // if result cannot be found in database, then get result from subgraph, all result
-    let result
-    try{
-      result = await getRates(token0,token1,chainId,from,to)
-    } catch (e){
-      next(e)
-      return
-    }
-    
-    const tokenInfo = await getTokenInfo(result)
-    const candles = ratesToCandles(result.rates,period,token0,token1,chainId)
-    await CandleModel.bulkCreate(candles, { ignoreDuplicates: true })
-
-    res.send({
-      chainId: chainId,
-      tokenInfo: tokenInfo,
-      rates: candles,
-    })
+    // logger.info("Cannot find candle data in database, get from subgraph")
+    res.send({})
+    // const result = await calculateCandles(token0,token1,chainId,from,to,period)
+    // res.send(result)
+    return
   })
 
   app.get('/api/tokens',async(req,res,next)=>{
