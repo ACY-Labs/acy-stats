@@ -2,6 +2,7 @@ import { ApolloClient, InMemoryCache, gql, HttpLink } from '@apollo/client'
 import fetch from 'cross-fetch';
 import { getLogger } from './helpers'
 import { CandleModel } from './CandleModel';
+import { Op } from 'sequelize';
 const logger = getLogger('rates')
 const apolloOptions = {
     query: {
@@ -24,7 +25,13 @@ const polygonGraphClient = new ApolloClient({
     defaultOptions: apolloOptions
 })
 
-export async function getRates(token0,token1,chainId){
+const polygonGraphClientTest = new ApolloClient({
+    link: new HttpLink({ uri: 'https://api.thegraph.com/subgraphs/id/QmUkVaXRD8Jog5V9HpP1KPCGtswLDC34X4hgg4p5LKYdX5', fetch }),
+    cache: new InMemoryCache(),
+    defaultOptions: apolloOptions
+})
+
+export async function getRates(token0,token1,chainId,from,to){
     const entities = "newSwaps"
     const fragment = (skip) => {
       return `${entities}(
@@ -34,7 +41,9 @@ export async function getRates(token0,token1,chainId){
         orderDirection: desc
         where: {
           token0_: {id:"${token0}"},
-          token1_: {id:"${token1}"}
+          token1_: {id:"${token1}"},
+          timestamp_gte: ${from},
+          timestamp_lte: ${to}
         }
       ) { timestamp,transaction{id},exchangeRate,token0Price,token1Price,amount0,amount1 }\n`
     }
@@ -286,6 +295,102 @@ export async function getTokens(chainId,start=0){
   for(let i=0;i<tokens.length;i++){
     tokens[i]["chainId"] = chainId
     tokens[i]["address"] = tokens[i].id
+    tokens[i]["name"] = tokens[i]["name"]?tokens[i]["name"]:"NULL"
+    tokens[i]["symbol"] = tokens[i]["symbol"]?tokens[i]["symbol"]:"NULL"
   }
   return tokens
+}
+
+export async function getTokenOverview(chainId,time,orderBy,orderDirection){
+  const entities = "poolDayDatas"
+  const fragment = () => {
+    return `${entities}(
+      where: {
+        date: ${time}
+      }
+      orderBy: ${orderBy},
+      orderDirection: ${orderDirection}
+      first: 15
+    ) {
+      pool{
+        token0{name}
+        token1{name}
+      }
+      volumeUSD
+      priceVariation
+      txCount
+      liquidity
+    }\n`
+  }
+
+  const queryString = `{
+      p0: ${fragment()}
+  }`
+
+  const query = gql(queryString)
+
+  const graphClient = polygonGraphClientTest
+  const { data } = await graphClient.query({query})
+  const tokens = [
+      ...data.p0,
+  ]
+  for (let i=0;i<tokens.length;i++){
+    tokens[i]["token0"] = tokens[i]["pool"]["token0"]["name"]
+    tokens[i]["token1"] = tokens[i]["pool"]["token1"]["name"]
+    delete tokens[i]["pool"]
+  }
+  return tokens
+}
+
+function safeDiv(n1,n2){
+  if (n2==0){
+    return 0
+  }
+  return n1/n2
+}
+
+export async function calculateCandles(token0,token1,chainId,from,to,period){
+  const WMATIC = "0x0d500b1d8e8ef31e21c99d1db9a6444d3adf1270"
+  const periodTime = periodsMap[period]
+  const candlesToken0 = await CandleModel.findAll({
+    where: {
+      token0:WMATIC,
+      token1:token0,
+      chainId:chainId,
+      dex:"Uniswap V3",
+      timestamp: { [Op.between] : [from, to] }
+    },
+    order: [
+      ['timestamp', 'ASC'],
+    ],
+  })
+  const candlesToken1 = await CandleModel.findAll({
+    where: {
+      token0:WMATIC,
+      token1:token1,
+      chainId:chainId,
+      dex:"Uniswap V3",
+      timestamp: { [Op.between] : [from, to] }
+    },
+    order: [
+      ['timestamp', 'ASC'],
+    ],
+  })
+  const candles = []
+  const test = {token1:candlesToken1,token0:candlesToken0}
+  for (let i=0;i<candlesToken0.length;i++){
+    let candleToken1 = candlesToken1.find(candle=>
+      candle.timestamp==candlesToken0[i].timestamp
+      )
+    if (candleToken1){
+      candles.push({
+        timestamp:candlesToken0[i].timestamp,
+        o:safeDiv(candleToken1.o,candlesToken0[i].o),
+        h:safeDiv(candleToken1.h,candlesToken0[i].h),
+        l:safeDiv(candleToken1.l,candlesToken0[i].l),
+        c:safeDiv(candleToken1.c,candlesToken0[i].c),
+      })
+    }
+  }
+  return candles
 }
