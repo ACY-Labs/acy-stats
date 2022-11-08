@@ -604,7 +604,7 @@ async function checkOldRates(chainId=56,to){
   // const to = getTimeNow()
   logger.info("Start checking old rates...")
   try{
-    let oldestTs
+    let oldestTs = 1630000000
     let oldestCandle = await CandleModel.findOne({
       where: { 
         chainId:chainId,
@@ -614,7 +614,9 @@ async function checkOldRates(chainId=56,to){
     })
   
     // get oldest time in database record
-    oldestTs = oldestCandle.timestamp
+    if (oldestCandle){
+      oldestTs = oldestCandle.timestamp
+    }
     // oldestTs = 1644124020   // for development
     let count = 0
     while (oldestTs<to){
@@ -638,6 +640,7 @@ async function checkOldRates(chainId=56,to){
     logger.info("Finish checking old rates...")
   }catch(ex){
     logger.error(ex)
+    await sequelize.sync()
     checkOldRates(chainId,to)
   }
 }
@@ -672,6 +675,7 @@ async function fetchToken(chainId=56){
     setTimeout(fetchToken,1000*60*1,56)
   }catch(ex){
     logger.error(ex)
+    await sequelize.sync()
     fetchToken(chainId)
   }
 }
