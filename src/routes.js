@@ -603,8 +603,8 @@ async function checkOldRates(chainId=56,to){
   // get time now
   // const to = getTimeNow()
   logger.info("Start checking old rates...")
-  let oldestTs
   try{
+    let oldestTs = 1630000000
     let oldestCandle = await CandleModel.findOne({
       where: { 
         chainId:chainId,
@@ -614,15 +614,11 @@ async function checkOldRates(chainId=56,to){
     })
   
     // get oldest time in database record
-    oldestTs = oldestCandle.timestamp
+    if (oldestCandle){
+      oldestTs = oldestCandle.timestamp
+    }
     // oldestTs = 1644124020   // for development
-  }catch(e){
-    oldestTs = 1644124020
-    logger.error(e)
-  }
-  
-  let count = 0
-  try{
+    let count = 0
     while (oldestTs<to){
       let oldCandle = await CandleModel.findOne({
         where: {
@@ -641,28 +637,26 @@ async function checkOldRates(chainId=56,to){
       oldestTs += 60
       to = getTimeNow()
     }
+    logger.info("Finish checking old rates...")
   }catch(ex){
     logger.error(ex)
+    await sequelize.sync()
+    checkOldRates(chainId,to)
   }
-  logger.info("Finish checking old rates...")
 }
 
 async function fetchToken(chainId=56){
-  const tokenList = []
+  
   try{
-    tokenList = await TokenModel.findAll({  // get database token list
+    let tokenList = await TokenModel.findAll({  // get database token list
       attributes: ["chainId", "name", "address", "symbol", "logoURI"],
       where:{
         chainId: chainId
       }
     })
-  }catch(e){
-    logger.error(e)
-  }
   
-  logger.info("Database token amount: ",tokenList.length)
+    logger.info("Database token amount: ",tokenList.length)
 
-  try{
     let newTokenList = await getTokens(chainId)   // get the first 1000 token
 
     let n = 1000
@@ -678,12 +672,12 @@ async function fetchToken(chainId=56){
       await TokenModel.bulkCreate(newTokenList,{ignoreDuplicates:true})   // save to database
       logger.info("Save %s tokens to database",newTokenList.length)
     }
-
+    setTimeout(fetchToken,1000*60*60,56)
   }catch(ex){
     logger.error(ex)
+    await sequelize.sync()
+    fetchToken(chainId)
   }
-  
-  setTimeout(fetchToken,1000*60*60,56)
 }
 
 fetchToken(56)
