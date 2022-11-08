@@ -672,7 +672,7 @@ async function fetchToken(chainId=56){
       await TokenModel.bulkCreate(newTokenList,{ignoreDuplicates:true})   // save to database
       logger.info("Save %s tokens to database",newTokenList.length)
     }
-    setTimeout(fetchToken,1000*60*1,56)
+    setTimeout(fetchToken,1000*60*60,56)
   }catch(ex){
     logger.error(ex)
     await sequelize.sync()
