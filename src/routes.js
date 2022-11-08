@@ -603,50 +603,63 @@ async function checkOldRates(chainId=56,to){
   // get time now
   // const to = getTimeNow()
   logger.info("Start checking old rates...")
-  let oldestCandle = await CandleModel.findOne({
-    where: { 
-      chainId:chainId,
-      dex: "Uniswap V3" 
-    },
-    order: [ ['timestamp', 'ASC']],
-  })
-
-  // get oldest time in database record
-  let oldestTs = oldestCandle.timestamp
-  // oldestTs = 1644124020   // for development
-  let count = 0
-  while (oldestTs<to){
-    let oldCandle = await CandleModel.findOne({
-      where: {
+  let oldestTs
+  try{
+    let oldestCandle = await CandleModel.findOne({
+      where: { 
         chainId:chainId,
-        dex: "Uniswap V3",
-        timestamp:oldestTs
-      }})
-    if (oldCandle === null){
-      try{
+        dex: "Uniswap V3" 
+      },
+      order: [ ['timestamp', 'ASC']],
+    })
+  
+    // get oldest time in database record
+    oldestTs = oldestCandle.timestamp
+    // oldestTs = 1644124020   // for development
+  }catch(e){
+    oldestTs = 1644124020
+    logger.error(e)
+  }
+  
+  let count = 0
+  try{
+    while (oldestTs<to){
+      let oldCandle = await CandleModel.findOne({
+        where: {
+          chainId:chainId,
+          dex: "Uniswap V3",
+          timestamp:oldestTs
+        }})
+      if (oldCandle === null){
         await fetchRates(oldestTs)
-      }catch(ex){
-        logger.error(ex)
+      } 
+      count+=1
+      if(count==60){
+        logger.info("Done checking old rates from %s to %s",oldestTs-600,oldestTs)
+        count=0
       }
-    } 
-    count+=1
-    if(count==60){
-      logger.info("Done checking old rates from %s to %s",oldestTs-600,oldestTs)
-      count=0
+      oldestTs += 60
+      to = getTimeNow()
     }
-    oldestTs += 60
-    to = getTimeNow()
+  }catch(ex){
+    logger.error(ex)
   }
   logger.info("Finish checking old rates...")
 }
 
 async function fetchToken(chainId=56){
-  const tokenList = await TokenModel.findAll({  // get database token list
-    attributes: ["chainId", "name", "address", "symbol", "logoURI"],
-    where:{
-      chainId: chainId
-    }
-  })
+  const tokenList = []
+  try{
+    tokenList = await TokenModel.findAll({  // get database token list
+      attributes: ["chainId", "name", "address", "symbol", "logoURI"],
+      where:{
+        chainId: chainId
+      }
+    })
+  }catch(e){
+    logger.error(e)
+  }
+  
   logger.info("Database token amount: ",tokenList.length)
 
   try{
@@ -670,7 +683,7 @@ async function fetchToken(chainId=56){
     logger.error(ex)
   }
   
-  setTimeout(fetchToken,1000*60*60)
+  setTimeout(fetchToken,1000*60*60,56)
 }
 
 fetchToken(56)
