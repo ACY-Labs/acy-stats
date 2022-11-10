@@ -676,7 +676,7 @@ async function fetchToken(chainId=56){
   }catch(ex){
     logger.error(ex)
     await sequelize.sync()
-    fetchToken(chainId)
+    setTimeout(fetchToken,1000*60,56)
   }
 }
 
