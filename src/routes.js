@@ -553,7 +553,7 @@ if (!process.env.DISABLE_PRICES) {
   // getTimestamp(0)
   let timeNow = getTimeNow()
   // fetchOldRates(56,timeNow)
-  checkOldRates(56,timeNow)
+  // checkOldRates(56,timeNow)
   fetchNewRates()
 }
 async function fetchOldRates(chainId=56,to){
@@ -676,7 +676,7 @@ async function fetchToken(chainId=56){
   }catch(ex){
     logger.error(ex)
     await sequelize.sync()
-    fetchToken(chainId)
+    setTimeout(fetchToken,1000*60,56)
   }
 }
 
