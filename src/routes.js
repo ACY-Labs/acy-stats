@@ -649,14 +649,21 @@ async function fetchToken(chainId=56){
   
   try{
     let tokenList = await TokenModel.findAll({  // get database token list
-      attributes: ["chainId", "name", "address", "symbol", "logoURI"],
+      attributes: ["chainId", "name", "address", "symbol", "logoURI", "volume"],
       where:{
         chainId: chainId
       }
     })
   
     logger.info("Database token amount: ",tokenList.length)
+  }catch(ex){
+    logger.error(ex)
+    await TokenModel.drop()
+    await sequelize.sync()
+    setTimeout(fetchToken,1000*60,56)
+  }
 
+  try{
     let newTokenList = await getTokens(chainId)   // get the first 1000 token
 
     let n = 1000
@@ -675,7 +682,6 @@ async function fetchToken(chainId=56){
     setTimeout(fetchToken,1000*60*60,56)
   }catch(ex){
     logger.error(ex)
-    await sequelize.sync()
     setTimeout(fetchToken,1000*60,56)
   }
 }
@@ -850,11 +856,19 @@ export default function routes(app) {
 
   app.get('/api/tokens',async(req,res,next)=>{
     let chainId = req.query.chainId
+    let skip = req.query.skip?req.query.skip:0
+    let limit = req.query.limit?req.query.limit:100
     const tokenList = await TokenModel.findAll({
-      attributes: ["chainId", "name", "address", "symbol", "decimals", "logoURI"],
+      attributes: ["chainId", "name", "address", "symbol", "decimals", "logoURI", "volume"],
       where:{
         chainId: chainId
-      }
+      },
+      order: [
+        ['volume','DESC'],
+      ],
+      offset:skip,
+      limit:limit
+      
     })
     res.send(tokenList)
     return
@@ -864,7 +878,7 @@ export default function routes(app) {
     let chainId = req.query.chainId
     let orderBy = req.query.orderBy
     let time = getTimestamp0000()
-    time = 1640217600  // for development
+    // time = 1640217600  // for development
     if (!orderBy || !orderByMap[orderBy]) {
       next(createHttpError(400, `Invalid order. Valid orders are ${Object.keys(orderByMap)}`))
       return
