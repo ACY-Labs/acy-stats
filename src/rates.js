@@ -278,7 +278,7 @@ export async function getTokens(chainId,start=0){
     return `${entities}(
       first: 1000
       skip: ${start}
-    ) { id,symbol,name,decimals }\n`
+    ) { id,symbol,name,decimals,volumeUSD }\n`
   }
 
   const queryString = `{
@@ -297,6 +297,7 @@ export async function getTokens(chainId,start=0){
     tokens[i]["address"] = tokens[i].id
     tokens[i]["name"] = tokens[i]["name"]?tokens[i]["name"]:"NULL"
     tokens[i]["symbol"] = tokens[i]["symbol"]?tokens[i]["symbol"]:"NULL"
+    tokens[i]["volume"] = tokens[i]["volumeUSD"]
   }
   return tokens
 }
@@ -320,6 +321,8 @@ export async function getTokenOverview(chainId,time,orderBy,orderDirection){
       priceVariation
       txCount
       liquidity
+      token0Price
+      token1Price
     }\n`
   }
 
@@ -393,4 +396,22 @@ export async function calculateCandles(token0,token1,chainId,from,to,period){
     }
   }
   return candles
+}
+
+export async function getPrice(token,chainId){
+  const entities = "newToken"
+  const queryString = `{
+    bundles{
+      id
+      ethPriceUSD
+    }
+    ${entities}(id: "${token}") {
+      derivedETH
+    }\n}`
+  const query = gql(queryString)
+  const graphClient = polygonGraphClientTest
+  const { data } = await graphClient.query({query})
+  const ethPrice = data.bundles[0].ethPriceUSD
+  const tokenPrice = data.newToken.derivedETH
+  return ethPrice*tokenPrice
 }
