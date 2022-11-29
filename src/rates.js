@@ -321,6 +321,8 @@ export async function getTokenOverview(chainId,time,orderBy,orderDirection){
       priceVariation
       txCount
       liquidity
+      token0Price
+      token1Price
     }\n`
   }
 
@@ -394,4 +396,22 @@ export async function calculateCandles(token0,token1,chainId,from,to,period){
     }
   }
   return candles
+}
+
+export async function getPrice(token,chainId){
+  const entities = "newToken"
+  const queryString = `{
+    bundles{
+      id
+      ethPriceUSD
+    }
+    ${entities}(id: "${token}") {
+      derivedETH
+    }\n}`
+  const query = gql(queryString)
+  const graphClient = polygonGraphClientTest
+  const { data } = await graphClient.query({query})
+  const ethPrice = data.bundles[0].ethPriceUSD
+  const tokenPrice = data.newToken.derivedETH
+  return ethPrice*tokenPrice
 }

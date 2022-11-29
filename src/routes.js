@@ -16,6 +16,7 @@ import { ChainlinkPriceModel } from './PricesModel';
 import { CandleModel } from './CandleModel';
 import Web3 from "web3";
 import { 
+  getPrice,
   getRates, 
   ratesToCandles, 
   getTokenInfo, 
@@ -696,7 +697,7 @@ const orderByMap = {
 
 function getTimestamp0000(timestamp){
   let date = new Date(timestamp*1000)
-  date.setHours(0,0,0,0)
+  date.setUTCHours(0,0,0,0)
   return date.getTime()/1000
 }
 
@@ -799,6 +800,22 @@ export default function routes(app) {
     }
   })
 
+  app.get('/api/price',async(req,res,next)=>{
+    let token = req.query.token
+    let chainId = req.query.chainId
+
+    // get result from subgraph
+    let result
+    try{
+      result = await getPrice(token,chainId)
+      res.send({price:result})
+    } catch (e){
+      res.send({price:0})
+      next(e)
+      return
+    }
+  })
+
   // get candles record from database
   app.get('/api/rates/candles',async(req,res,next)=>{
     let token0 = req.query.token0
@@ -877,16 +894,20 @@ export default function routes(app) {
   app.get('/api/tokens-overview',async(req,res,next)=>{
     let chainId = req.query.chainId
     let orderBy = req.query.orderBy
-    let time = getTimestamp0000()
+    let time = getTimestamp0000(getTimeNow())
     // time = 1640217600  // for development
     if (!orderBy || !orderByMap[orderBy]) {
       next(createHttpError(400, `Invalid order. Valid orders are ${Object.keys(orderByMap)}`))
       return
     }
-    const tokenList = await getTokenOverview(chainId,time,orderByMap[orderBy][0],orderByMap[orderBy][1])
-
-    res.send(tokenList)
+    try{
+      const tokenList = await getTokenOverview(chainId,time,orderByMap[orderBy][0],orderByMap[orderBy][1])
+      res.send(tokenList)
     return
+    }catch(e){
+      next(e)
+      return
+    }
   })
 
   const cssAssetsTag = cssLinksFromAssets(assets, 'client')
