@@ -874,7 +874,7 @@ export default function routes(app) {
   app.get('/api/tokens',async(req,res,next)=>{
     let chainId = req.query.chainId
     let skip = req.query.skip?req.query.skip:0
-    let limit = req.query.limit?req.query.limit:100
+    let limit = req.query.limit?req.query.limit:null
     const tokenList = await TokenModel.findAll({
       attributes: ["chainId", "name", "address", "symbol", "decimals", "logoURI", "volume"],
       where:{
