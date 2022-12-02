@@ -340,6 +340,7 @@ export async function getTokenOverview(chainId,time,orderBy,orderDirection){
   for (let i=0;i<tokens.length;i++){
     tokens[i]["token0"] = tokens[i]["pool"]["token0"]["name"]
     tokens[i]["token1"] = tokens[i]["pool"]["token1"]["name"]
+    tokens[i]["exchange"] = "Uniswap v3"
     delete tokens[i]["pool"]
   }
   return tokens

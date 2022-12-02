@@ -647,9 +647,9 @@ async function checkOldRates(chainId=56,to){
 }
 
 async function fetchToken(chainId=56){
-  
+  let tokenList
   try{
-    let tokenList = await TokenModel.findAll({  // get database token list
+    tokenList = await TokenModel.findAll({  // get database token list
       attributes: ["chainId", "name", "address", "symbol", "logoURI", "volume"],
       where:{
         chainId: chainId
