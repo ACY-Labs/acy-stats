@@ -32,6 +32,17 @@ const polygonGraphClientTest = new ApolloClient({
 })
 
 export async function getRates(token0,token1,chainId,from,to){
+    let timestampOP = {}
+    if (from&&to){
+      timestampOP = `timestamp_gte: ${from},timestamp_lte: ${to}`
+    }else if(from){
+      timestampOP = `timestamp_gte: ${from}`
+    }else if(to){
+      timestampOP = `timestamp_lte: ${to}`
+    }else{
+      timestampOP = ``
+    }
+
     const entities = "newSwaps"
     const fragment = (skip) => {
       return `${entities}(
@@ -42,8 +53,7 @@ export async function getRates(token0,token1,chainId,from,to){
         where: {
           token0_: {id:"${token0}"},
           token1_: {id:"${token1}"},
-          timestamp_gte: ${from},
-          timestamp_lte: ${to}
+          ${timestampOP}
         }
       ) { timestamp,transaction{id},exchangeRate,token0Price,token1Price,amount0,amount1 }\n`
     }
