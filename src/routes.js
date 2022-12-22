@@ -845,7 +845,7 @@ export default function routes(app) {
     const rates = await CandleModel.findAll({ 
       attributes: ["timestamp", "o", "h", "l", "c"],
       where: {
-          chainId: chainId,
+          chainId: 56,
           token0: token0,
           token1: token1,
           dex: "Uniswap V3",
@@ -878,7 +878,7 @@ export default function routes(app) {
     const tokenList = await TokenModel.findAll({
       attributes: ["chainId", "name", "address", "symbol", "decimals", "logoURI", "volume"],
       where:{
-        chainId: chainId
+        chainId: 56
       },
       order: [
         ['volume','DESC'],

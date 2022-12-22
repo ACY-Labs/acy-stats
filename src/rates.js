@@ -32,6 +32,17 @@ const polygonGraphClientTest = new ApolloClient({
 })
 
 export async function getRates(token0,token1,chainId,from,to){
+    let timestampOP = {}
+    if (from&&to){
+      timestampOP = `timestamp_gte: ${from},timestamp_lte: ${to}`
+    }else if(from){
+      timestampOP = `timestamp_gte: ${from}`
+    }else if(to){
+      timestampOP = `timestamp_lte: ${to}`
+    }else{
+      timestampOP = ``
+    }
+
     const entities = "newSwaps"
     const fragment = (skip) => {
       return `${entities}(
@@ -42,8 +53,7 @@ export async function getRates(token0,token1,chainId,from,to){
         where: {
           token0_: {id:"${token0}"},
           token1_: {id:"${token1}"},
-          timestamp_gte: ${from},
-          timestamp_lte: ${to}
+          ${timestampOP}
         }
       ) { timestamp,transaction{id},exchangeRate,token0Price,token1Price,amount0,amount1 }\n`
     }
@@ -314,8 +324,8 @@ export async function getTokenOverview(chainId,time,orderBy,orderDirection){
       first: 15
     ) {
       pool{
-        token0{name}
-        token1{name}
+        token0{name,id}
+        token1{name,id}
       }
       volumeUSD
       priceVariation
@@ -340,6 +350,8 @@ export async function getTokenOverview(chainId,time,orderBy,orderDirection){
   for (let i=0;i<tokens.length;i++){
     tokens[i]["token0"] = tokens[i]["pool"]["token0"]["name"]
     tokens[i]["token1"] = tokens[i]["pool"]["token1"]["name"]
+    tokens[i]["token0Address"] = tokens[i]["pool"]["token0"]["id"]
+    tokens[i]["token1Address"] = tokens[i]["pool"]["token1"]["id"]
     tokens[i]["exchange"] = "Uniswap v3"
     delete tokens[i]["pool"]
   }
