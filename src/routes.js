@@ -27,7 +27,8 @@ import {
   fetchRates, 
   getTokens, 
   getTokenOverview,
-  calculateCandles
+  calculateCandles,
+  getNewPairList
 } from './rates';
 import { TokenModel } from './TokenModel';
 
@@ -903,6 +904,19 @@ export default function routes(app) {
     try{
       const tokenList = await getTokenOverview(chainId,time,orderByMap[orderBy][0],orderByMap[orderBy][1])
       res.send(tokenList)
+    return
+    }catch(e){
+      next(e)
+      return
+    }
+  })
+
+  app.get('/api/new-pairs',async(req,res,next)=>{
+    let chainId = req.query.chainId
+    let n = req.query.n?req.query.n:15
+    try{
+      const newPairList = await getNewPairList(chainId,n)
+      res.send(newPairList)
     return
     }catch(e){
       next(e)
