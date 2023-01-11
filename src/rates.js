@@ -428,3 +428,43 @@ export async function getPrice(token,chainId){
   const tokenPrice = data.newToken.derivedETH
   return ethPrice*tokenPrice
 }
+
+export async function getNewPairList(chainId,n=10){
+  const entities = "pools"
+  const fragment = () => {
+    return `${entities}(
+      orderBy: createdAtTimestamp,
+      orderDirection: desc,
+      first: ${n}
+    ) {
+      token0{name,id}
+      token1{name,id}
+      createdAtTimestamp
+      token0Price
+      token1Price
+      volumeUSD
+      liquidity
+      txCount
+    }\n`
+  }
+
+  const queryString = `{
+      p0: ${fragment()}
+  }`
+
+  const query = gql(queryString)
+
+  const graphClient = polygonGraphClientTest
+  const { data } = await graphClient.query({query})
+  const newPairs = [
+      ...data.p0,
+  ]
+  for (let i=0;i<newPairs.length;i++){
+    newPairs[i]["token0Address"] = newPairs[i]["token0"]["id"]
+    newPairs[i]["token1Address"] = newPairs[i]["token1"]["id"]
+    newPairs[i]["token0"] = newPairs[i]["token0"]["name"]
+    newPairs[i]["token1"] = newPairs[i]["token1"]["name"]
+    newPairs[i]["exchange"] = "Uniswap v3"
+  }
+  return newPairs
+}
