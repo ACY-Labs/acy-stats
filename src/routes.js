@@ -14,6 +14,7 @@ import { Op } from 'sequelize';
 import { sequelize } from './database.js';
 import { ChainlinkPriceModel } from './PricesModel';
 import { CandleModel } from './CandleModel';
+import { PoolModel } from './PoolModel';
 import Web3 from "web3";
 import { 
   getPrice,
@@ -28,7 +29,8 @@ import {
   getTokens, 
   getTokenOverview,
   calculateCandles,
-  getNewPairList
+  getNewPairList,
+  getAllPairs
 } from './rates';
 import { TokenModel } from './TokenModel';
 
@@ -137,6 +139,22 @@ class TtlCache {
     setTimeout(() => {
       this._logger.debug('delete key %s (ttl)', key)
       delete this._cache[key]
+    }, this._ttl * 1000)
+
+    if (!IS_PRODUCTION) {
+      console.time('sizeof call')
+      const size = sizeof(this._cache) / 1024 / 1024
+      console.timeEnd('sizeof call')
+      this._logger.debug('TtlCache cache size %s MB', size)
+    }
+  }
+
+  setAll(obj) {
+    this._cache = obj
+    
+    setTimeout(() => {
+      this._logger.debug('delete key (ttl)')
+      delete this._cache
     }, this._ttl * 1000)
 
     if (!IS_PRODUCTION) {
@@ -688,7 +706,16 @@ async function fetchToken(chainId=56){
   }
 }
 
+async function fetchPairs(chainId=56){
+  let pairList = await getAllPairs(chainId)
+  await PoolModel.drop()
+  await sequelize.sync()
+  await PoolModel.bulkCreate(pairList, { ignoreDuplicates: true });
+  setTimeout(fetchPairs,1000*60*5,56)
+}
+
 fetchToken(56)
+fetchPairs(56)
 
 const orderByMap = {
   'topvolume': ['volumeUSD','desc'],
@@ -918,6 +945,36 @@ export default function routes(app) {
       const newPairList = await getNewPairList(chainId,n)
       res.send(newPairList)
     return
+    }catch(e){
+      next(e)
+      return
+    }
+  })
+
+  app.get('/api/search-pairs',async(req,res,next)=>{
+    let chainId = req.query.chainId
+    let n = req.query.n?req.query.n:15
+    let keyword = req.query.keyword
+    try{
+      const pairList = await PoolModel.findAll({
+        attributes: ["token0Name", "token1Name", "token0Symbol", "token1Symbol", "token0Address", "token1Address","volume","id"],
+        where:{
+          chainId: chainId,
+          [Op.or]: [
+            { token0Address: { [Op.like]: `%${keyword}%` } },
+            { token1Address: { [Op.like]: `%${keyword}%` } },
+            { token1Name: { [Op.like]: `%${keyword}%` } },
+            { token0Name: { [Op.like]: `%${keyword}%` } },
+            { token0Symbol: { [Op.like]: `%${keyword}%` } },
+            { token1Symbol: { [Op.like]: `%${keyword}%` } }
+          ]
+        },
+        order: [
+          ['volume','DESC'],
+        ]
+      })
+      res.send(pairList)
+      return
     }catch(e){
       next(e)
       return

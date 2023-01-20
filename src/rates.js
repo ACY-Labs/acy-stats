@@ -468,3 +468,68 @@ export async function getNewPairList(chainId,n=10){
   }
   return newPairs
 }
+
+export async function getAllPairs(chainId){
+  let allPairs = []
+  let id = 0
+  let temp = []
+  do{
+    logger.info("Getting 500 pairs from id ",id)
+    temp = await get500Pairs(chainId,id)
+    allPairs = [...allPairs,...temp]
+    if (temp.length!=0){
+      id = temp[temp.length-1].id
+    }
+  }while(temp.length!=0)
+  logger.info("Got all pairs ",allPairs.length,"pairs")
+  return allPairs
+}
+
+export async function get500Pairs(chainId,id){
+  const entities = "pools"
+  const fragment = () => {
+    return `${entities}(
+      first: 500,
+      where: {id_gt: "${id}"}
+    ) {
+      id
+      token0{name,id,symbol}
+      token1{name,id,symbol}
+      createdAtTimestamp
+      token0Price
+      token1Price
+      volumeUSD
+      liquidity
+      txCount
+    }\n`
+  }
+
+  const queryString = `{
+      p0: ${fragment()}
+  }`
+
+  const query = gql(queryString)
+  const graphClient = polygonGraphClientTest
+  let pairs = []
+  try{
+    const { data } = await graphClient.query({query})
+    pairs = [
+        ...data.p0,
+    ]
+    for (let i=0;i<pairs.length;i++){
+      pairs[i]["token0Address"] = pairs[i]["token0"]["id"]
+      pairs[i]["token0Name"] = pairs[i]["token0"]["name"]
+      pairs[i]["token0Symbol"] = pairs[i]["token0"]["symbol"]
+      pairs[i]["token1Address"] = pairs[i]["token1"]["id"]
+      pairs[i]["token1Name"] = pairs[i]["token1"]["name"]
+      pairs[i]["token1Symbol"] = pairs[i]["token1"]["symbol"]
+      pairs[i]["volume"] = pairs[i]["volumeUSD"]
+      pairs[i]["chainId"] = "137"
+    }
+    
+  }catch(e){
+    logger.error(e)
+    pairs = get500Pairs(chainId,id)
+  }
+  return pairs
+}
