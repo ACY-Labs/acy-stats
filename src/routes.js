@@ -886,14 +886,33 @@ export default function routes(app) {
 
     // convert time interval for candle data
     if (rates.length!=0){
-      const result = candle2candle(rates,period)
+      if (from){
+        const candle = await CandleModel.findOne({
+          attributes: ["timestamp", "o", "h", "l", "c"],
+          where: {
+            chainId: 56,
+            token0: token0,
+            token1: token1,
+            dex: "Uniswap V3",
+            timestamp: { [Op.lte] : [from] },
+            c : {[Op.ne] : [0]}
+          },
+          order: [
+            ['timestamp', 'DESC']
+          ]
+        })
+        console.log(candle)
+        rates.unshift(candle)
+      }
+      // const _result = standalizeData(rates)
+      const result = candle2candle(rates,period,from)
       res.send(result)
       return
     }
 
     // if result cannot be found in database, then get result from subgraph, all result
     // logger.info("Cannot find candle data in database, get from subgraph")
-    res.send({})
+    res.send([])
     // const result = await calculateCandles(token0,token1,chainId,from,to,period)
     // res.send(result)
     return
