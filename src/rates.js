@@ -215,7 +215,8 @@ export function classifyRawData(rates){
   return result
 }
 
-export function candle2candle(candle,period='1m'){
+export function candle2candle(candle,period='1m',_from=0){
+  const from = _from ? _from : 0
   const periodTime = periodsMap[period]
   if (periodTime=='1m'){
     return candle
@@ -231,20 +232,38 @@ export function candle2candle(candle,period='1m'){
 
   for (let i=1; i<candle.length; i++){
     const ts = candle[i].timestamp
-    const nextTs = prevTs + periodTime
+    let nextTs = prevTs + periodTime
     
     if (ts < nextTs){
       h = candle[i].h > h ? candle[i].h : h
       l = candle[i].l < l ? candle[i].l : l
       c = candle[i].c
-    } else {
-      candlesResult.push({timestamp:prevTs,o,h,l,c})
+    } else if (ts >= nextTs){
+      candlesResult.push({timestamp:prevTs,o,h,l,c})  //0300
+      while (ts >= nextTs){  //0960>0900
+        prevTs += periodTime  //0900
+        nextTs = prevTs + periodTime  //1200
+        if (ts>nextTs){
+          candlesResult.push({timestamp:prevTs,o:c,h:c,l:c,c:c})
+          // candlesResult.push({timestamp:prevTs,o,h,l,c})
+        }
+        // candlesResult.push({timestamp:prevTs,o,h,l,c})
+        // prevTs = nextTs
+      }
       o = candle[i].o
       h = candle[i].h
       l = candle[i].l
       c = candle[i].c
-      prevTs = nextTs
+      // prevTs = nextTs
     }
+    // }else {
+    //   candlesResult.push({timestamp:prevTs,o,h,l,c})
+    //   o = candle[i].o
+    //   h = candle[i].h
+    //   l = candle[i].l
+    //   c = candle[i].c
+    //   prevTs = nextTs
+    // }
   }
 
   candlesResult.push({timestamp:prevTs,o,h,l,c})
