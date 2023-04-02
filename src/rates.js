@@ -215,12 +215,12 @@ export function classifyRawData(rates){
   return result
 }
 
-export function candle2candle(candle,period='1m',_from=0){
+export function candle2candle(candle,period='1m',_from=0,_to){
   const from = _from ? _from : 0
   const periodTime = periodsMap[period]
-  if (periodTime=='1m'){
-    return candle
-  }
+  // if (periodTime=='1m'){
+  //   return candle
+  // }
 
   const candlesResult = []
   const first = candle[0]
@@ -243,7 +243,7 @@ export function candle2candle(candle,period='1m',_from=0){
       while (ts >= nextTs){  //0960>0900
         prevTs += periodTime  //0900
         nextTs = prevTs + periodTime  //1200
-        if (ts>nextTs){
+        if (ts>=nextTs){
           candlesResult.push({timestamp:prevTs,o:c,h:c,l:c,c:c})
           // candlesResult.push({timestamp:prevTs,o,h,l,c})
         }
@@ -267,6 +267,10 @@ export function candle2candle(candle,period='1m',_from=0){
   }
 
   candlesResult.push({timestamp:prevTs,o,h,l,c})
+  while(prevTs<_to){
+    prevTs += periodTime
+    candlesResult.push({timestamp:prevTs,o:c,h:c,l:c,c:c})
+  }
 
   return candlesResult
 }
