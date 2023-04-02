@@ -850,7 +850,7 @@ export default function routes(app) {
     let token1 = req.query.token1
     let chainId = req.query.chainId
     let from = req.query.from
-    let to = req.query.to
+    let to = req.query.to?req.query.to:getTimeNow()
 
     let timestampOP = {}
     if (from&&to){
@@ -905,7 +905,7 @@ export default function routes(app) {
         rates.unshift(candle)
       }
       // const _result = standalizeData(rates)
-      const result = candle2candle(rates,period,from)
+      const result = candle2candle(rates,period,from,to)
       res.send(result)
       return
     }
