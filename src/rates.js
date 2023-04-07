@@ -225,6 +225,9 @@ export function candle2candle(candle,period='1m',_from=0,_to){
   const candlesResult = []
   const first = candle[0]
   let prevTs = first.timestamp
+  if (prevTs%periodTime!=0){
+    prevTs = Math.floor(prevTs/periodTime) * periodTime
+  }
   let o = first.o
   let h = first.h
   let l = first.l
