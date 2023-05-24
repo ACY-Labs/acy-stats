@@ -26,7 +26,7 @@ const polygonGraphClient = new ApolloClient({
 })
 
 const polygonGraphClientTest = new ApolloClient({
-    link: new HttpLink({ uri: 'https://api.thegraph.com/subgraphs/id/QmUkVaXRD8Jog5V9HpP1KPCGtswLDC34X4hgg4p5LKYdX5', fetch }),
+    link: new HttpLink({ uri: 'https://api.thegraph.com/subgraphs/name/linja19/uniswap-v3-4', fetch }),
     cache: new InMemoryCache(),
     defaultOptions: apolloOptions
 })
